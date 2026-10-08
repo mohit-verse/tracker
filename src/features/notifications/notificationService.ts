@@ -34,43 +34,45 @@ export const reconcileDailyReminders = async (
   userBatch: BatchType,
   settings?: NotificationSettings
 ) => {
-  // Cancel all existing scheduled reminders to recreate them safely (deduplication)
-  await Notifications.cancelAllScheduledNotificationsAsync();
-  
-  if (!settings || !settings.dailyReminderEnabled) {
-    return;
-  }
-  
-  const hasPermission = await requestNotificationPermissions();
-  if (!hasPermission) {
-    return;
-  }
-
-  const [hourStr, minuteStr] = settings.reminderTime.split(':');
-  const hour = parseInt(hourStr, 10);
-  const minute = parseInt(minuteStr, 10);
-
-  // Schedule a weekly notification for each eligible day
-  // expo-notifications weekly triggers are 1-based where 1 = Sunday
-  for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
-    if (isDayEligibleForReminder(dayOfWeek, timetable, userBatch)) {
-      // weekday in expo is 1=Sunday, 2=Monday, ..., 7=Saturday
-      const expoWeekday = dayOfWeek + 1;
-      
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "Attendance Reminder",
-          body: "You have attendance-bearing sessions today. Tap to record your attendance.",
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
-          hour,
-          minute,
-          weekday: expoWeekday,
-          repeats: true,
-        },
-      });
+  try {
+    // Cancel all existing scheduled reminders to recreate them safely (deduplication)
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    
+    if (!settings || !settings.dailyReminderEnabled) {
+      return;
     }
+    
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) {
+      return;
+    }
+
+    const [hourStr, minuteStr] = settings.reminderTime.split(':');
+    const hour = parseInt(hourStr, 10);
+    const minute = parseInt(minuteStr, 10);
+
+    // Schedule a weekly notification for each eligible day
+    for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
+      if (isDayEligibleForReminder(dayOfWeek, timetable, userBatch)) {
+        const expoWeekday = dayOfWeek + 1;
+        
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Attendance Reminder",
+            body: "You have attendance-bearing sessions today. Tap to record your attendance.",
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
+            hour,
+            minute,
+            weekday: expoWeekday,
+            repeats: true,
+          },
+        });
+      }
+    }
+  } catch (e) {
+    // Notification failure must not break attendance tracking
   }
 };
 
@@ -83,27 +85,31 @@ export const checkRiskAlerts = async (
   subjectsSummaries: { subjectName: string; summary: AttendanceSummary }[],
   settings?: NotificationSettings
 ) => {
-  if (!settings || !settings.riskAlertsEnabled) {
-    return;
-  }
-  
-  const hasPermission = await requestNotificationPermissions();
-  if (!hasPermission) {
-    return;
-  }
+  try {
+    if (!settings || !settings.riskAlertsEnabled) {
+      return;
+    }
+    
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) {
+      return;
+    }
 
-  const atRiskSubjects = subjectsSummaries.filter(
-    s => s.summary.conductedWeight > 0 && s.summary.percentage !== null && !s.summary.isAboveTarget
-  );
+    const atRiskSubjects = subjectsSummaries.filter(
+      s => s.summary.conductedWeight > 0 && s.summary.percentage !== null && !s.summary.isAboveTarget
+    );
 
-  if (atRiskSubjects.length > 0) {
-    const subjectNames = atRiskSubjects.map(s => s.subjectName).join(', ');
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: "Attendance Risk Alert",
-        body: `You are currently below your target attendance in: ${subjectNames}. Check your planner.`,
-      },
-      trigger: null, // send immediately
-    });
+    if (atRiskSubjects.length > 0) {
+      const subjectNames = atRiskSubjects.map(s => s.subjectName).join(', ');
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Attendance Risk Alert",
+          body: `You are currently below your target attendance in: ${subjectNames}. Check your planner.`,
+        },
+        trigger: null, // send immediately
+      });
+    }
+  } catch (e) {
+    // Notification failure must not break attendance tracking
   }
 };

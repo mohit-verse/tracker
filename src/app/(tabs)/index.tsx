@@ -5,16 +5,20 @@ import { theme } from '../../theme/theme';
 import { SubjectAttendanceCard } from '../../components/SubjectAttendanceCard';
 import { MOCK_SUBJECTS } from '../../data/mock';
 import { useAttendance } from '../../data/useAttendance';
-import { LoadingState } from '../../components/UIStates';
+import { LoadingState, ErrorState } from '../../components/UIStates';
 
 export default function DashboardScreen() {
-  const { getSubjectSummary, isLoaded, loadData } = useAttendance();
+  const { getSubjectSummary, isLoaded, loadData, error } = useAttendance();
 
   useFocusEffect(
     useCallback(() => {
       loadData();
     }, [loadData])
   );
+
+  if (error) {
+    return <ErrorState title="Storage Error" message={error} onAction={loadData} />;
+  }
 
   if (!isLoaded) {
     return <LoadingState />;

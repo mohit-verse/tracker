@@ -139,6 +139,14 @@ export const validateBackupDocument = (doc: unknown): ValidationResult => {
     errors.push('Missing settings object.');
   } else {
     const s = data.settings as Record<string, unknown>;
+    
+    // Check for deep/malformed structure
+    const allowedKeys = ['studentBatch', 'targetPercentage', 'notificationSettings'];
+    const keys = Object.keys(s);
+    if (keys.some(k => !allowedKeys.includes(k))) {
+      errors.push('Settings object contains unknown/malformed attributes.');
+    }
+
     if (!['Batch I', 'Batch II', 'All'].includes(s.studentBatch as string)) {
       errors.push(`settings: invalid studentBatch "${s.studentBatch}".`);
     }

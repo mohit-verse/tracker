@@ -74,6 +74,10 @@ export const pickBackupFile = async (): Promise<unknown | null> => {
     encoding: FileSystem.EncodingType.UTF8,
   });
 
+  if (content.length > 5 * 1024 * 1024) {
+    throw new Error('Selected file is too large to be a valid backup (max 5MB).');
+  }
+
   try {
     return JSON.parse(content);
   } catch {
@@ -132,9 +136,43 @@ export const restoreFromBackup = async (
 
   // Step 2: Replace local data
   try {
-    await StorageService.set(ATTENDANCE_KEY, backup.data.attendanceRecords);
-    await StorageService.set(TIMETABLE_KEY, backup.data.timetable);
-    await StorageService.set(SETTINGS_KEY, backup.data.settings);
+    const cleanSettings: AppSettings = {
+      studentBatch: backup.data.settings.studentBatch,
+      targetPercentage: backup.data.settings.targetPercentage,
+      notificationSettings: backup.data.settings.notificationSettings ? {
+        dailyReminderEnabled: backup.data.settings.notificationSettings.dailyReminderEnabled,
+        reminderTime: backup.data.settings.notificationSettings.reminderTime,
+        riskAlertsEnabled: backup.data.settings.notificationSettings.riskAlertsEnabled
+      } : undefined
+    };
+
+    const cleanRecords = backup.data.attendanceRecords.map(r => ({
+      id: r.id,
+      subjectId: r.subjectId,
+      component: r.component,
+      date: r.date,
+      timetableEntryId: r.timetableEntryId,
+      status: r.status,
+      weight: r.weight,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }));
+
+    const cleanTimetable = backup.data.timetable.map(t => ({
+      id: t.id,
+      dayOfWeek: t.dayOfWeek,
+      startTime: t.startTime,
+      endTime: t.endTime,
+      subjectId: t.subjectId,
+      component: t.component,
+      isAttendanceBearing: t.isAttendanceBearing,
+      weight: t.weight,
+      batchConstraint: t.batchConstraint
+    }));
+
+    await StorageService.set(ATTENDANCE_KEY, cleanRecords);
+    await StorageService.set(TIMETABLE_KEY, cleanTimetable);
+    await StorageService.set(SETTINGS_KEY, cleanSettings);
   } catch (e) {
     // Partial failure — attempt recovery
     const recovered = await recoverFromSnapshot();

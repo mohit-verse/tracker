@@ -8,18 +8,22 @@ import { useTimetable } from '../../data/useTimetable';
 import { useAttendance } from '../../data/useAttendance';
 import { reconcileDailyReminders } from '../../features/notifications/notificationService';
 import { TimetableEntry } from '../../types';
-import { LoadingState } from '../../components/UIStates';
+import { LoadingState, ErrorState } from '../../components/UIStates';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function TimetableScreen() {
-  const { timetable, isLoaded, loadTimetable, deleteEntry } = useTimetable();
+  const { timetable, isLoaded, error, loadTimetable, deleteEntry } = useTimetable();
 
   useFocusEffect(
     useCallback(() => {
       loadTimetable();
     }, [loadTimetable])
   );
+
+  if (error) {
+    return <ErrorState title="Storage Error" message={error} onAction={loadTimetable} />;
+  }
 
   if (!isLoaded) {
     return <LoadingState />;

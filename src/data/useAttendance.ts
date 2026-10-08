@@ -15,6 +15,7 @@ export const useAttendance = () => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [settings, setSettings] = useState<AppSettings>({ studentBatch: 'Batch I', targetPercentage: 0.75 });
   const [isLoaded, setIsLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { timetable, isLoaded: timetableLoaded, loadTimetable } = useTimetable();
 
   useEffect(() => {
@@ -22,17 +23,25 @@ export const useAttendance = () => {
   }, []);
 
   const loadData = useCallback(async () => {
-    const savedRecords = await StorageService.get<AttendanceRecord[]>(STORAGE_KEY);
-    if (savedRecords) {
-      setRecords(savedRecords);
+    try {
+      setError(null);
+      const savedRecords = await StorageService.get<AttendanceRecord[]>(STORAGE_KEY);
+      if (savedRecords) {
+        setRecords(savedRecords);
+      } else {
+        setRecords([]); // Clear memory if storage is empty (e.g. after reset)
+      }
+      
+      const savedSettings = await StorageService.get<AppSettings>(SETTINGS_KEY);
+      if (savedSettings) {
+        setSettings(savedSettings);
+      }
+      await loadTimetable();
+      setIsLoaded(true);
+    } catch (e: any) {
+      setError(e.message || 'Failed to load storage');
+      setIsLoaded(true); // Stop loading so UI can show error
     }
-    
-    const savedSettings = await StorageService.get<AppSettings>(SETTINGS_KEY);
-    if (savedSettings) {
-      setSettings(savedSettings);
-    }
-    await loadTimetable();
-    setIsLoaded(true);
   }, [loadTimetable]);
 
   const saveRecord = async (
@@ -134,6 +143,7 @@ export const useAttendance = () => {
   return {
     records,
     isLoaded: isLoaded && timetableLoaded,
+    error,
     loadData,
     saveRecord,
     deleteRecord,

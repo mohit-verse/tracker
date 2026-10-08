@@ -8,17 +8,23 @@ const TIMETABLE_KEY = '@tracker_timetable';
 export const useTimetable = () => {
   const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadTimetable = useCallback(async () => {
-    const savedTimetable = await StorageService.get<TimetableEntry[]>(TIMETABLE_KEY);
-    if (savedTimetable && savedTimetable.length > 0) {
-      setTimetable(savedTimetable);
-    } else {
-      // Seed with mock timetable on first run
-      setTimetable(MOCK_TIMETABLE);
-      await StorageService.set(TIMETABLE_KEY, MOCK_TIMETABLE);
+    try {
+      setError(null);
+      const savedTimetable = await StorageService.get<TimetableEntry[]>(TIMETABLE_KEY);
+      if (savedTimetable && savedTimetable.length > 0) {
+        setTimetable(savedTimetable);
+      } else if (savedTimetable === null) {
+        // Clear memory if storage is empty, unless it's the very first time where we seed
+        setTimetable([]);
+      }
+      setIsLoaded(true);
+    } catch (e: any) {
+      setError(e.message || 'Failed to load timetable storage');
+      setIsLoaded(true);
     }
-    setIsLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -60,6 +66,7 @@ export const useTimetable = () => {
   return {
     timetable,
     isLoaded,
+    error,
     loadTimetable,
     saveEntry,
     deleteEntry

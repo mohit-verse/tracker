@@ -4,6 +4,7 @@ import { theme } from '../../theme/theme';
 import { useAttendance } from '../../data/useAttendance';
 import { useTimetable } from '../../data/useTimetable';
 import { reconcileDailyReminders, requestNotificationPermissions } from '../../features/notifications/notificationService';
+import * as Notifications from 'expo-notifications';
 import { exportAndShareBackup, pickBackupFile, restoreFromBackup } from '../../features/backup/backupIO';
 import { validateBackupDocument } from '../../features/backup/backupService';
 import { BackupDocument } from '../../types';
@@ -145,10 +146,48 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleReset = () => {
+    Alert.alert(
+      'Reset Local Data',
+      'This will permanently delete all your attendance records, timetable, and settings from this device. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset Data',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Attempt safety snapshot
+              const { createSafetySnapshot } = await import('../../features/backup/backupIO');
+              await createSafetySnapshot();
+            } catch (e) {
+              Alert.alert('Snapshot Failed', 'Could not create a safety snapshot. Reset aborted.');
+              return;
+            }
+
+            try {
+              const { StorageService } = await import('../../storage/StorageService');
+              await StorageService.clear();
+              // Reset state
+              await updateSettings({ studentBatch: 'Batch I', targetPercentage: 0.75, notificationSettings: { dailyReminderEnabled: false, riskAlertsEnabled: false, reminderTime: '18:00' } });
+              await loadTimetable();
+              await loadData();
+              // Clear notifications
+              await Notifications.cancelAllScheduledNotificationsAsync();
+              Alert.alert('Reset Complete', 'Your local data has been cleared.');
+            } catch (e) {
+              Alert.alert('Reset Failed', 'Failed to clear data completely.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notifications</Text>
+        <Text style={styles.sectionTitle}>General</Text>
         <View style={styles.row}>
           <View>
             <Text style={styles.rowTitle}>Daily Reminder</Text>
@@ -213,6 +252,36 @@ export default function SettingsScreen() {
           <Text style={styles.actionText}>Restore from Google Drive</Text>
         </TouchableOpacity>
       </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Privacy</Text>
+        <View style={styles.card}>
+          <Text style={styles.privacyText}>
+            • Attendance data is stored locally on this device.
+          </Text>
+          <Text style={styles.privacyText}>
+            • Tracker does not use an account or shared backend.
+          </Text>
+          <Text style={styles.privacyText}>
+            • Cloud features (Google Drive) are optional and only trigger when explicitly requested.
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Recovery</Text>
+        <TouchableOpacity style={styles.actionRow} onPress={handleReset}>
+          <Text style={styles.actionTextDanger}>Reset Local Data</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>About</Text>
+        <View style={styles.card}>
+          <Text style={styles.aboutText}>Tracker</Text>
+          <Text style={styles.aboutSubText}>Version 1.0.0</Text>
+        </View>
+      </View>
     </ScrollView>
   );
 }
@@ -221,6 +290,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  content: {
+    paddingBottom: theme.spacing.xxl,
   },
   section: {
     marginTop: theme.spacing.xl,
@@ -264,22 +336,38 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  actionRowDisabled: {
-    opacity: 0.5,
-  },
   actionText: {
     color: theme.colors.primary,
     fontSize: theme.typography.sizes.m,
     fontWeight: theme.typography.weights.medium,
   },
-  actionTextDisabled: {
-    color: theme.colors.textSecondary,
+  actionTextDanger: {
+    color: theme.colors.danger,
     fontSize: theme.typography.sizes.m,
+    fontWeight: theme.typography.weights.medium,
   },
-  badgeText: {
+  card: {
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.m,
+    borderRadius: theme.borderRadius.m,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  privacyText: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.typography.sizes.s,
+    lineHeight: 20,
+    marginBottom: theme.spacing.xs,
+  },
+  aboutText: {
+    color: theme.colors.textPrimary,
+    fontSize: theme.typography.sizes.m,
+    fontWeight: theme.typography.weights.bold,
+  },
+  aboutSubText: {
     color: theme.colors.textMuted,
-    fontSize: theme.typography.sizes.xs,
-    textTransform: 'uppercase',
+    fontSize: theme.typography.sizes.s,
+    marginTop: theme.spacing.xs,
   },
   timeInput: {
     backgroundColor: theme.colors.background,

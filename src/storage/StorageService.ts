@@ -9,39 +9,26 @@ export interface StorageServiceInterface {
 
 class AsyncStorageService implements StorageServiceInterface {
   async get<T>(key: string): Promise<T | null> {
+    const item = await AsyncStorage.getItem(key);
+    if (item === null) return null;
     try {
-      const item = await AsyncStorage.getItem(key);
-      if (item === null) return null;
       return JSON.parse(item) as T;
-    } catch (error) {
-      console.error(`Error getting item ${key} from storage`, error);
-      return null;
+    } catch (e) {
+      throw new Error(`Storage data corrupted for key ${key}`);
     }
   }
 
   async set<T>(key: string, value: T): Promise<void> {
-    try {
-      const jsonValue = JSON.stringify(value);
-      await AsyncStorage.setItem(key, jsonValue);
-    } catch (error) {
-      console.error(`Error setting item ${key} to storage`, error);
-    }
+    const jsonValue = JSON.stringify(value);
+    await AsyncStorage.setItem(key, jsonValue);
   }
 
   async remove(key: string): Promise<void> {
-    try {
-      await AsyncStorage.removeItem(key);
-    } catch (error) {
-      console.error(`Error removing item ${key} from storage`, error);
-    }
+    await AsyncStorage.removeItem(key);
   }
 
   async clear(): Promise<void> {
-    try {
-      await AsyncStorage.clear();
-    } catch (error) {
-      console.error('Error clearing storage', error);
-    }
+    await AsyncStorage.clear();
   }
 }
 

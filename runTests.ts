@@ -232,5 +232,21 @@ const badBackup28 = {
 const badResult28 = validateBackupDocument(badBackup28 as any);
 assertTrue(!badResult28.valid, 'Test 28: Invalid timetable entry rejected');
 
+console.log('\n=== Milestone 7: Privacy & Safety Domain ===');
+
+// Test 29: Export schema contains intended fields and no extra secrets
+const serializedBackup = JSON.stringify(backup);
+assertTrue(!serializedBackup.includes('token'), 'Test 29: Export excludes secrets');
+assertTrue(!serializedBackup.includes('oauth'), 'Test 29: Export excludes oauth strings');
+assertTrue(serializedBackup.includes('attendanceRecords'), 'Test 29: Export includes attendanceRecords');
+
+// Test 30: Reject malformed deep/oversized payload
+const badBackup30 = {
+  ...backup,
+  data: { ...backup.data, settings: { nested: { extremely: { deep: 'value' } } } }
+};
+const badResult30 = validateBackupDocument(badBackup30 as any);
+assertTrue(!badResult30.valid, 'Test 30: Deep/malformed structure is rejected');
+
 console.log(`\nResults: ${passed} passed, ${failed} failed.`);
 if (failed > 0) process.exit(1);
