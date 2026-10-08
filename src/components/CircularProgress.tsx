@@ -49,7 +49,7 @@ export const CircularProgress: React.FC<CircularProgressProps> = ({
   const color = !hasData ? theme.colors.border : (isSafe ? theme.colors.present : theme.colors.warning);
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} accessible={false} importantForAccessibility="no-hide-descendants">
       <View style={{ width: size, height: size }}>
         <Svg width={size} height={size}>
           <Circle

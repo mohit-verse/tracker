@@ -24,7 +24,7 @@ export default function DashboardScreen() {
     return <LoadingState />;
   }
 
-  const renderItem = ({ item }: { item: typeof MOCK_SUBJECTS[0] }) => {
+  const renderItem = useCallback(({ item }: { item: typeof MOCK_SUBJECTS[0] }) => {
     const theorySummary = item.hasTheory ? getSubjectSummary(item.id, 'theory') : null;
     const practicalSummary = item.hasPractical ? getSubjectSummary(item.id, 'practical') : null;
 
@@ -36,7 +36,7 @@ export default function DashboardScreen() {
         onPress={() => router.push(`/subject/${item.id}`)}
       />
     );
-  };
+  }, [getSubjectSummary]);
 
   return (
     <View style={styles.container}>

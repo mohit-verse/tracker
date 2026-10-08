@@ -104,10 +104,10 @@ export const useAttendance = () => {
     });
   };
 
-  const getSubjectSummary = (subjectId: string, component: 'theory' | 'practical'): AttendanceSummary => {
+  const getSubjectSummary = useCallback((subjectId: string, component: 'theory' | 'practical'): AttendanceSummary => {
     const subjectRecords = records.filter(r => r.subjectId === subjectId && r.component === component);
     return calculateAttendance(subjectRecords, settings.targetPercentage);
-  };
+  }, [records, settings.targetPercentage]);
 
   const getTodaySessions = (date: Date) => {
     return getApplicableSessions(date, timetable, settings.studentBatch);

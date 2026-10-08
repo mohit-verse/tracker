@@ -21,6 +21,9 @@ export const SubjectAttendanceCard: React.FC<SubjectAttendanceCardProps> = ({
       style={styles.card} 
       onPress={onPress}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${name} Attendance. ${theoryPercentage !== undefined ? `Theory: ${Math.round(theoryPercentage)}%.` : ''} ${practicalPercentage !== undefined ? `Practical: ${Math.round(practicalPercentage)}%.` : ''}`}
+      accessibilityHint="Double tap to view detailed history and planner"
     >
       <Text style={styles.title} numberOfLines={2}>
         {name}
