@@ -6,15 +6,31 @@ import { SubjectAttendanceCard } from '../../components/SubjectAttendanceCard';
 import { MOCK_SUBJECTS } from '../../data/mock';
 import { useAttendance } from '../../data/useAttendance';
 import { LoadingState, ErrorState } from '../../components/UIStates';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function DashboardScreen() {
   const { getSubjectSummary, isLoaded, loadData, error } = useAttendance();
+  const insets = useSafeAreaInsets();
 
   useFocusEffect(
     useCallback(() => {
       loadData();
     }, [loadData])
   );
+
+  const renderItem = useCallback(({ item }: { item: typeof MOCK_SUBJECTS[0] }) => {
+    const theorySummary = item.hasTheory ? getSubjectSummary(item.id, 'theory') : null;
+    const practicalSummary = item.hasPractical ? getSubjectSummary(item.id, 'practical') : null;
+
+    return (
+      <SubjectAttendanceCard
+        name={item.name}
+        theorySummary={item.hasTheory ? theorySummary : undefined}
+        practicalSummary={item.hasPractical ? practicalSummary : undefined}
+        onPress={() => router.push(`/subject/${item.id}`)}
+      />
+    );
+  }, [getSubjectSummary]);
 
   if (error) {
     return <ErrorState title="Storage Error" message={error} onAction={loadData} />;
@@ -24,27 +40,19 @@ export default function DashboardScreen() {
     return <LoadingState />;
   }
 
-  const renderItem = useCallback(({ item }: { item: typeof MOCK_SUBJECTS[0] }) => {
-    const theorySummary = item.hasTheory ? getSubjectSummary(item.id, 'theory') : null;
-    const practicalSummary = item.hasPractical ? getSubjectSummary(item.id, 'practical') : null;
-
-    return (
-      <SubjectAttendanceCard
-        name={item.name}
-        theoryPercentage={theorySummary?.percentage ?? undefined}
-        practicalPercentage={practicalSummary?.percentage ?? undefined}
-        onPress={() => router.push(`/subject/${item.id}`)}
-      />
-    );
-  }, [getSubjectSummary]);
-
   return (
     <View style={styles.container}>
       <FlatList
         data={MOCK_SUBJECTS}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 100 }]}
+        ListHeaderComponent={
+          <View style={styles.headerContainer}>
+            <Text style={styles.headerTitle}>Tracker</Text>
+            <Text style={styles.headerSubtitle}>Your Attendance Overview</Text>
+          </View>
+        }
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>No attendance recorded yet.</Text>
@@ -59,10 +67,24 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: 'transparent',
+  },
+  headerContainer: {
+    marginBottom: theme.spacing.xl,
+    paddingHorizontal: theme.spacing.m,
+  },
+  headerTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 28,
+    fontWeight: theme.typography.weights.bold,
+  },
+  headerSubtitle: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.typography.sizes.m,
+    marginTop: 4,
   },
   listContent: {
-    padding: theme.spacing.m,
+    paddingHorizontal: theme.spacing.m,
   },
   emptyState: {
     flex: 1,

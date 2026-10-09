@@ -1,19 +1,23 @@
 import React, { useCallback } from 'react';
-import { View, Text, StyleSheet, SectionList, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, SectionList, Alert } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme/theme';
-import { MOCK_SUBJECTS } from '../../data/mock';
 import { useTimetable } from '../../data/useTimetable';
 import { useAttendance } from '../../data/useAttendance';
-import { reconcileDailyReminders } from '../../features/notifications/notificationService';
 import { TimetableEntry } from '../../types';
 import { LoadingState, ErrorState } from '../../components/UIStates';
+import { MOCK_SUBJECTS } from '../../data/mock';
+import { reconcileDailyReminders } from '../../features/notifications/notificationService';
+import { BackgroundGlow } from '../../components/BackgroundGlow';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function TimetableScreen() {
-  const { timetable, isLoaded, error, loadTimetable, deleteEntry } = useTimetable();
+  const { timetable, deleteEntry, isLoaded, loadTimetable, error } = useTimetable();
+  const { settings } = useAttendance();
+  const insets = useSafeAreaInsets();
 
   useFocusEffect(
     useCallback(() => {
@@ -22,11 +26,21 @@ export default function TimetableScreen() {
   );
 
   if (error) {
-    return <ErrorState title="Storage Error" message={error} onAction={loadTimetable} />;
+    return (
+      <View style={styles.container}>
+        <BackgroundGlow />
+        <ErrorState title="Storage Error" message={error} onAction={loadTimetable} />
+      </View>
+    );
   }
 
   if (!isLoaded) {
-    return <LoadingState />;
+    return (
+      <View style={styles.container}>
+        <BackgroundGlow />
+        <LoadingState />
+      </View>
+    );
   }
 
   const getSubjectName = (id: string) => {
@@ -39,8 +53,6 @@ export default function TimetableScreen() {
     router.push({ pathname: '/add-timetable', params: { id } });
   };
 
-  const { settings } = useAttendance();
-
   const handleDelete = (id: string) => {
     Alert.alert('Delete Entry', 'Are you sure you want to delete this session? Historical attendance will NOT be affected.', [
       { text: 'Cancel', style: 'cancel' },
@@ -52,7 +64,6 @@ export default function TimetableScreen() {
     ]);
   };
 
-  // Group by day
   const grouped: { title: string; data: TimetableEntry[] }[] = [];
   DAYS.forEach((dayName, index) => {
     const dayEntries = timetable.filter(e => e.dayOfWeek === index);
@@ -63,43 +74,39 @@ export default function TimetableScreen() {
 
   const renderItem = ({ item }: { item: TimetableEntry }) => (
     <View style={styles.card}>
-      <View style={styles.timeContainer}>
+      <View style={styles.timeColumn}>
         <Text style={styles.timeText}>{item.startTime}</Text>
-        <Text style={styles.timeTextMuted}>to {item.endTime}</Text>
+        <View style={styles.timeLine} />
+        <Text style={styles.timeText}>{item.endTime}</Text>
       </View>
-      <View style={styles.detailsContainer}>
+
+      <View style={styles.detailsColumn}>
         <Text style={styles.subjectText} numberOfLines={2}>
           {getSubjectName(item.subjectId)}
         </Text>
-        <View style={styles.badgeRow}>
-          {item.component !== 'none' && (
-            <View style={[styles.badge, item.component === 'practical' ? styles.badgePractical : styles.badgeTheory]}>
-              <Text style={styles.badgeText}>{item.component.toUpperCase()}</Text>
-            </View>
-          )}
-          {item.batchConstraint && item.batchConstraint !== 'All' && (
-            <View style={[styles.badge, styles.badgeBatch]}>
-              <Text style={styles.badgeText}>{item.batchConstraint}</Text>
-            </View>
-          )}
-          {!item.isAttendanceBearing && (
-            <View style={[styles.badge, styles.badgeNonAttendance]}>
-              <Text style={styles.badgeText}>NO ATTENDANCE</Text>
-            </View>
-          )}
-          {item.weight !== 1 && item.weight > 0 && (
-            <View style={[styles.badge, { backgroundColor: 'rgba(255, 171, 112, 0.2)' }]}>
-              <Text style={[styles.badgeText, { color: '#ffab70' }]}>WEIGHT: {item.weight}</Text>
-            </View>
-          )}
+        <View style={styles.componentPill}>
+          <Text style={styles.componentText}>
+            {item.component.charAt(0).toUpperCase() + item.component.slice(1)}
+          </Text>
         </View>
+        <View style={styles.metaRow}>
+          <Ionicons name="people" size={12} color={theme.colors.textSecondary} />
+          <Text style={styles.metaText}>{item.batchConstraint || 'All Batches'}</Text>
+        </View>
+        {item.isAttendanceBearing && (
+          <View style={styles.metaRow}>
+            <Ionicons name="bar-chart" size={12} color={theme.colors.textSecondary} />
+            <Text style={styles.metaText}>Weight: {item.weight}</Text>
+          </View>
+        )}
       </View>
-      <View style={styles.actionsContainer}>
-        <TouchableOpacity onPress={() => handleEdit(item.id)} style={styles.actionButton}>
-          <Ionicons name="pencil" size={18} color={theme.colors.textMuted} />
+
+      <View style={styles.actionsColumn}>
+        <TouchableOpacity style={styles.actionBtnEdit} onPress={() => handleEdit(item.id)}>
+          <Ionicons name="pencil" size={16} color={theme.colors.textSecondary} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.actionButton}>
-          <Ionicons name="trash" size={18} color={theme.colors.absent} />
+        <TouchableOpacity style={styles.actionBtnDelete} onPress={() => handleDelete(item.id)}>
+          <Ionicons name="trash-outline" size={16} color={theme.colors.danger} />
         </TouchableOpacity>
       </View>
     </View>
@@ -107,51 +114,210 @@ export default function TimetableScreen() {
 
   return (
     <View style={styles.container}>
+      <BackgroundGlow />
       <SectionList
         sections={grouped}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         renderSectionHeader={({ section: { title } }) => (
-          <Text style={styles.headerTitle}>{title}</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.headerTitle}>{title}</Text>
+          </View>
         )}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 100 }]}
+        ListHeaderComponent={
+          <View style={styles.topHeaderContainer}>
+            <Text style={styles.topHeaderTitle}>Timetable</Text>
+            <Text style={styles.topHeaderSubtitle}>Manage your weekly schedule</Text>
+          </View>
+        }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No timetable entries configured.</Text>
+            <Text style={styles.emptyTitle}>No timetable configured yet.</Text>
+            <Text style={styles.emptyText}>Add your first timetable entry to get started.</Text>
+            <TouchableOpacity 
+              style={styles.emptyButton} 
+              onPress={() => router.push('/add-timetable')}
+            >
+              <Text style={styles.emptyButtonText}>Add Entry</Text>
+            </TouchableOpacity>
           </View>
         }
       />
       <TouchableOpacity 
-        style={styles.fab} 
+        style={[styles.fab, { bottom: insets.bottom + 90 }]} 
         onPress={() => router.push('/add-timetable')}
         accessibilityLabel="Add Timetable Entry"
       >
-        <Ionicons name="add" size={24} color={theme.colors.background} />
+        <Ionicons name="add" size={28} color="#000" />
       </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
-  listContent: { padding: theme.spacing.m, paddingBottom: 100 },
-  headerTitle: { color: theme.colors.textPrimary, fontSize: theme.typography.sizes.l, fontWeight: theme.typography.weights.bold, marginTop: theme.spacing.m, marginBottom: theme.spacing.m },
-  card: { backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.m, padding: theme.spacing.m, marginBottom: theme.spacing.m, flexDirection: 'row', borderWidth: 1, borderColor: theme.colors.border },
-  timeContainer: { width: 80, borderRightWidth: 1, borderRightColor: theme.colors.border, paddingRight: theme.spacing.m, marginRight: theme.spacing.m, justifyContent: 'center' },
-  timeText: { color: theme.colors.textPrimary, fontSize: theme.typography.sizes.m, fontWeight: theme.typography.weights.semiBold },
-  timeTextMuted: { color: theme.colors.textMuted, fontSize: theme.typography.sizes.s, marginTop: theme.spacing.xs },
-  detailsContainer: { flex: 1, justifyContent: 'center' },
-  subjectText: { color: theme.colors.textPrimary, fontSize: theme.typography.sizes.m, fontWeight: theme.typography.weights.medium, marginBottom: theme.spacing.s },
-  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.s },
-  badge: { paddingHorizontal: theme.spacing.s, paddingVertical: theme.spacing.xs, borderRadius: theme.borderRadius.s },
-  badgeTheory: { backgroundColor: '#1F2937' },
-  badgePractical: { backgroundColor: '#374151' },
-  badgeBatch: { backgroundColor: 'rgba(88, 166, 255, 0.2)' },
-  badgeNonAttendance: { backgroundColor: 'rgba(248, 81, 73, 0.2)' },
-  badgeText: { color: theme.colors.textSecondary, fontSize: 10, fontWeight: theme.typography.weights.bold },
-  actionsContainer: { justifyContent: 'space-between', paddingLeft: theme.spacing.m },
-  actionButton: { padding: 4 },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: theme.spacing.xl },
-  emptyText: { color: theme.colors.textSecondary, fontSize: theme.typography.sizes.m },
-  fab: { position: 'absolute', bottom: theme.spacing.xl, right: theme.spacing.xl, width: 56, height: 56, borderRadius: 28, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 6 }
+  container: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  topHeaderContainer: {
+    marginBottom: theme.spacing.xl,
+  },
+  topHeaderTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 28,
+    fontWeight: theme.typography.weights.bold,
+  },
+  topHeaderSubtitle: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.typography.sizes.m,
+    marginTop: 4,
+  },
+  listContent: {
+    paddingHorizontal: theme.spacing.m,
+  },
+  sectionHeader: {
+    backgroundColor: 'rgba(5,5,5,0.85)',
+    paddingVertical: theme.spacing.m,
+    marginBottom: theme.spacing.s,
+  },
+  headerTitle: {
+    color: theme.colors.primary,
+    fontSize: theme.typography.sizes.m,
+    fontWeight: theme.typography.weights.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  card: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.surfaceHighlight,
+    borderRadius: theme.borderRadius.l,
+    padding: theme.spacing.m,
+    marginBottom: theme.spacing.m,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  timeColumn: {
+    width: 50,
+    alignItems: 'center',
+    marginRight: theme.spacing.m,
+  },
+  timeText: {
+    color: theme.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: theme.typography.weights.bold,
+  },
+  timeLine: {
+    width: 1,
+    flex: 1,
+    backgroundColor: theme.colors.border,
+    marginVertical: 4,
+  },
+  detailsColumn: {
+    flex: 1,
+    borderRightWidth: 1,
+    borderRightColor: theme.colors.border,
+    paddingRight: theme.spacing.m,
+    marginRight: theme.spacing.m,
+  },
+  subjectText: {
+    color: theme.colors.textPrimary,
+    fontSize: 16,
+    fontWeight: theme.typography.weights.semiBold,
+    marginBottom: theme.spacing.s,
+  },
+  componentPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(249, 115, 22, 0.1)',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.primaryMuted,
+    marginBottom: theme.spacing.m,
+  },
+  componentText: {
+    color: theme.colors.primary,
+    fontSize: 11,
+    fontWeight: theme.typography.weights.bold,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    gap: 6,
+  },
+  metaText: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+  },
+  actionsColumn: {
+    width: 40,
+    justifyContent: 'center',
+    gap: theme.spacing.m,
+  },
+  actionBtnEdit: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  actionBtnDelete: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: theme.spacing.xl,
+    marginTop: theme.spacing.xxl,
+  },
+  emptyTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: theme.typography.sizes.l,
+    fontWeight: theme.typography.weights.bold,
+    marginBottom: theme.spacing.s,
+  },
+  emptyText: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.typography.sizes.m,
+    textAlign: 'center',
+    marginBottom: theme.spacing.xl,
+  },
+  emptyButton: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.m,
+    borderRadius: theme.borderRadius.m,
+  },
+  emptyButtonText: {
+    color: '#000',
+    fontSize: theme.typography.sizes.m,
+    fontWeight: theme.typography.weights.bold,
+  },
+  fab: {
+    position: 'absolute',
+    right: theme.spacing.m,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  }
 });

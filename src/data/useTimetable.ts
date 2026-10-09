@@ -17,7 +17,10 @@ export const useTimetable = () => {
       if (savedTimetable && savedTimetable.length > 0) {
         setTimetable(savedTimetable);
       } else if (savedTimetable === null) {
-        // Clear memory if storage is empty, unless it's the very first time where we seed
+        // Seed initial timetable with project spec data on very first launch
+        setTimetable(MOCK_TIMETABLE);
+        await StorageService.set(TIMETABLE_KEY, MOCK_TIMETABLE);
+      } else {
         setTimetable([]);
       }
       setIsLoaded(true);

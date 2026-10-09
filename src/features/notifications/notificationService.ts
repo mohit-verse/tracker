@@ -1,47 +1,96 @@
-import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
 import { TimetableEntry, NotificationSettings, BatchType, AttendanceSummary } from '../../types';
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
-
 import { isDayEligibleForReminder } from './notificationDomain';
 
-export const requestNotificationPermissions = async (): Promise<boolean> => {
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-  
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
+/**
+ * EXPO GO COMPATIBILITY
+ *
+ * expo-notifications (remote/push) was removed from Expo Go with SDK 53.
+ * To prevent a startup crash in Expo Go, this module NEVER imports
+ * expo-notifications at the top level.  Instead, the module is loaded
+ * lazily—only when a function is actually called—and every public
+ * function degrades gracefully if the module is unavailable.
+ *
+ * The native EAS build retains full notification support because the module
+ * IS available there and the dynamic import resolves successfully.
+ */
+
+// ---------------------------------------------------------------------------
+// Lazy loader — returns the Notifications module or null in Expo Go
+// ---------------------------------------------------------------------------
+type NotificationsModule = typeof import('expo-notifications');
+let _notifications: NotificationsModule | null | 'unresolved' = 'unresolved';
+
+const getNotifications = async (): Promise<NotificationsModule | null> => {
+  if (_notifications !== 'unresolved') return _notifications;
+
+  try {
+    const mod = await import('expo-notifications');
+    // Expo Go stubs the module but doesn't expose the real API.
+    // A quick sanity check: if getPermissionsAsync is not a function, treat
+    // it as unavailable (Expo Go stubs it as undefined on Android SDK 53+).
+    if (typeof mod?.getPermissionsAsync !== 'function') {
+      _notifications = null;
+      return null;
+    }
+    // Register the notification handler once, on first successful load.
+    mod.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+    _notifications = mod;
+  } catch {
+    _notifications = null;
   }
-  
-  return finalStatus === 'granted';
+  return _notifications;
+};
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export const requestNotificationPermissions = async (): Promise<boolean> => {
+  const Notifications = await getNotifications();
+  if (!Notifications) return false;
+
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    return finalStatus === 'granted';
+  } catch {
+    return false;
+  }
 };
 
 /**
- * Reconciles the scheduled notifications with the user's timetable and settings.
+ * Reconciles scheduled notifications with the user's timetable and settings.
+ * Silently no-ops in Expo Go.
  */
 export const reconcileDailyReminders = async (
   timetable: TimetableEntry[],
   userBatch: BatchType,
   settings?: NotificationSettings
-) => {
+): Promise<void> => {
+  const Notifications = await getNotifications();
+  if (!Notifications) return; // Expo Go — degrade gracefully
+
   try {
-    // Cancel all existing scheduled reminders to recreate them safely (deduplication)
     await Notifications.cancelAllScheduledNotificationsAsync();
-    
+
     if (!settings || !settings.dailyReminderEnabled) {
       return;
     }
-    
+
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) {
       return;
@@ -51,15 +100,14 @@ export const reconcileDailyReminders = async (
     const hour = parseInt(hourStr, 10);
     const minute = parseInt(minuteStr, 10);
 
-    // Schedule a weekly notification for each eligible day
     for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
       if (isDayEligibleForReminder(dayOfWeek, timetable, userBatch)) {
         const expoWeekday = dayOfWeek + 1;
-        
+
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: "Attendance Reminder",
-            body: "You have attendance-bearing sessions today. Tap to record your attendance.",
+            title: 'Attendance Reminder',
+            body: 'You have attendance-bearing sessions today. Tap to record your attendance.',
           },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
@@ -71,45 +119,59 @@ export const reconcileDailyReminders = async (
         });
       }
     }
-  } catch (e) {
+  } catch {
     // Notification failure must not break attendance tracking
   }
 };
 
 /**
- * Dispatches risk alerts if subjects are below the target.
- * Does not fire if already notified recently (basic cooldown handled loosely here, 
- * or via local storage cooldowns if needed, but for M5 we'll dispatch local immediate alerts if active).
+ * Dispatches risk alerts if subjects are below target.
+ * Silently no-ops in Expo Go.
  */
 export const checkRiskAlerts = async (
   subjectsSummaries: { subjectName: string; summary: AttendanceSummary }[],
   settings?: NotificationSettings
-) => {
+): Promise<void> => {
+  const Notifications = await getNotifications();
+  if (!Notifications) return; // Expo Go — degrade gracefully
+
   try {
     if (!settings || !settings.riskAlertsEnabled) {
       return;
     }
-    
+
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) {
       return;
     }
 
     const atRiskSubjects = subjectsSummaries.filter(
-      s => s.summary.conductedWeight > 0 && s.summary.percentage !== null && !s.summary.isAboveTarget
+      (s) =>
+        s.summary.conductedWeight > 0 &&
+        s.summary.percentage !== null &&
+        !s.summary.isAboveTarget
     );
 
     if (atRiskSubjects.length > 0) {
-      const subjectNames = atRiskSubjects.map(s => s.subjectName).join(', ');
+      const subjectNames = atRiskSubjects.map((s) => s.subjectName).join(', ');
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: "Attendance Risk Alert",
+          title: 'Attendance Risk Alert',
           body: `You are currently below your target attendance in: ${subjectNames}. Check your planner.`,
         },
-        trigger: null, // send immediately
+        trigger: null,
       });
     }
-  } catch (e) {
+  } catch {
     // Notification failure must not break attendance tracking
   }
+};
+
+/**
+ * Returns whether push/local notifications are available in the current
+ * runtime (false in Expo Go on Android/SDK 53+, true in native builds).
+ */
+export const areNotificationsAvailable = async (): Promise<boolean> => {
+  const mod = await getNotifications();
+  return mod !== null;
 };

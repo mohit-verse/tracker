@@ -46,7 +46,7 @@ export const CircularProgress: React.FC<CircularProgressProps> = ({
   });
 
   const isSafe = hasData && displayPercentage >= 75;
-  const color = !hasData ? theme.colors.border : (isSafe ? theme.colors.present : theme.colors.warning);
+  const color = !hasData ? theme.colors.border : theme.colors.primary; // Always orange
 
   return (
     <View style={styles.container} accessible={false} importantForAccessibility="no-hide-descendants">

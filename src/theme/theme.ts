@@ -1,18 +1,19 @@
 export const theme = {
   colors: {
-    background: '#0F1115', // very dark blue-grey
-    surface: '#16191F', // slightly lighter surface
-    surfaceHighlight: '#22262E',
-    border: '#2C313D',
+    background: '#050505', // Deep black
+    surface: 'rgba(255, 255, 255, 0.05)', // Glassy surface
+    surfaceHighlight: 'rgba(255, 255, 255, 0.08)',
+    border: 'rgba(255, 255, 255, 0.12)',
     textPrimary: '#FFFFFF',
-    textSecondary: '#8B949E',
-    textMuted: '#525964',
-    primary: '#58A6FF', // Developer blue
-    success: '#3FB950', // Green
-    warning: '#D29922', // Yellow/Orange
-    danger: '#F85149', // Red
-    present: '#2EA043',
-    absent: '#DA3633',
+    textSecondary: '#A1A1AA', // Zinc 400
+    textMuted: '#52525B', // Zinc 600
+    primary: '#F97316', // Burnt Orange
+    primaryMuted: 'rgba(249, 115, 22, 0.2)', // Orange glass
+    success: '#10B981', // Emerald
+    warning: '#F97316', // Using orange for warnings
+    danger: '#EF4444', // Red
+    present: '#10B981',
+    absent: '#EF4444',
   },
   spacing: {
     xs: 4,
