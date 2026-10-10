@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { StorageService } from '../storage/StorageService';
 import { AttendanceRecord, AttendanceSummary, BatchType, Subject, AppSettings } from '../types';
 import { calculateAttendance, getApplicableSessions } from '../features/attendance/attendanceService';
 import { MOCK_SUBJECTS } from './mock';
@@ -7,9 +6,8 @@ import { useTimetable } from './useTimetable';
 import { checkRiskAlerts } from '../features/notifications/notificationService';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
-
-const STORAGE_KEY = '@tracker_attendance_records';
-const SETTINGS_KEY = '@tracker_settings';
+import { getDatabase } from '../db';
+import { getAttendanceRecords, addAttendanceRecord as dbAddRecord, updateAttendanceRecordDb, deleteAttendanceRecordDb, getSettings, saveSettings } from '../db/repositories';
 
 export const useAttendance = () => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -25,14 +23,15 @@ export const useAttendance = () => {
   const loadData = useCallback(async () => {
     try {
       setError(null);
-      const savedRecords = await StorageService.get<AttendanceRecord[]>(STORAGE_KEY);
+      await getDatabase();
+      const savedRecords = await getAttendanceRecords();
       if (savedRecords) {
         setRecords(savedRecords);
       } else {
-        setRecords([]); // Clear memory if storage is empty (e.g. after reset)
+        setRecords([]);
       }
       
-      const savedSettings = await StorageService.get<AppSettings>(SETTINGS_KEY);
+      const savedSettings = await getSettings();
       if (savedSettings) {
         setSettings(savedSettings);
       }
@@ -40,7 +39,7 @@ export const useAttendance = () => {
       setIsLoaded(true);
     } catch (e: any) {
       setError(e.message || 'Failed to load storage');
-      setIsLoaded(true); // Stop loading so UI can show error
+      setIsLoaded(true); 
     }
   }, [loadTimetable]);
 
@@ -64,44 +63,43 @@ export const useAttendance = () => {
       updatedAt: new Date().toISOString(),
     };
 
-    setRecords(prev => {
-      // Check for duplicate: date + timetableEntryId
-      const existingIndex = prev.findIndex(
-        r => r.date === date && r.timetableEntryId === timetableEntryId
-      );
+    // Check for duplicate: date + timetableEntryId
+    const existingIndex = records.findIndex(
+      r => r.date === date && r.timetableEntryId === timetableEntryId
+    );
 
-      let updatedRecords;
-      if (existingIndex >= 0) {
-        // Update existing
-        updatedRecords = [...prev];
-        updatedRecords[existingIndex] = {
-          ...updatedRecords[existingIndex],
-          status,
-          updatedAt: new Date().toISOString(),
-        };
-      } else {
-        // Add new
-        updatedRecords = [...prev, newRecord];
-      }
-      
-      StorageService.set(STORAGE_KEY, updatedRecords);
-      
-      // Check risk alerts asynchronously
-      if (settings.notificationSettings?.riskAlertsEnabled) {
-        setTimeout(() => {
-          const summaries = MOCK_SUBJECTS.map(sub => ({
-            subjectName: sub.name,
-            summary: calculateAttendance(
-              updatedRecords.filter(r => r.subjectId === sub.id), 
-              settings.targetPercentage
-            )
-          }));
-          checkRiskAlerts(summaries, settings.notificationSettings);
-        }, 1000);
-      }
-
-      return updatedRecords;
-    });
+    let updatedRecords;
+    if (existingIndex >= 0) {
+      // Update existing
+      updatedRecords = [...records];
+      const idToUpdate = updatedRecords[existingIndex].id;
+      updatedRecords[existingIndex] = {
+        ...updatedRecords[existingIndex],
+        status,
+        updatedAt: new Date().toISOString(),
+      };
+      setRecords(updatedRecords);
+      await updateAttendanceRecordDb(idToUpdate, updatedRecords[existingIndex]);
+    } else {
+      // Add new
+      updatedRecords = [...records, newRecord];
+      setRecords(updatedRecords);
+      await dbAddRecord(newRecord);
+    }
+    
+    // Check risk alerts asynchronously
+    if (settings.notificationSettings?.riskAlertsEnabled) {
+      setTimeout(() => {
+        const summaries = MOCK_SUBJECTS.map(sub => ({
+          subjectName: sub.name,
+          summary: calculateAttendance(
+            updatedRecords.filter(r => r.subjectId === sub.id), 
+            settings.targetPercentage
+          )
+        }));
+        checkRiskAlerts(summaries, settings.notificationSettings);
+      }, 1000);
+    }
   };
 
   const getSubjectSummary = useCallback((subjectId: string, component: 'theory' | 'practical'): AttendanceSummary => {
@@ -126,18 +124,15 @@ export const useAttendance = () => {
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   };
 
-  const deleteRecord = (id: string) => {
-    setRecords(prev => {
-      const updated = prev.filter(r => r.id !== id);
-      StorageService.set(STORAGE_KEY, updated);
-      return updated;
-    });
+  const deleteRecord = async (id: string) => {
+    setRecords(prev => prev.filter(r => r.id !== id));
+    await deleteAttendanceRecordDb(id);
   };
 
   const updateSettings = async (newSettings: Partial<AppSettings>) => {
     const updated = { ...settings, ...newSettings };
     setSettings(updated);
-    await StorageService.set(SETTINGS_KEY, updated);
+    await saveSettings(updated);
   };
 
   return {
