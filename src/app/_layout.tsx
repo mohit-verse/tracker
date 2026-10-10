@@ -5,7 +5,6 @@ import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, Text, Platform } from 'react-native';
 import { BackgroundGlow } from '../components/BackgroundGlow';
 import { AuthProvider, useAuth } from '../context/AuthContext';
-import * as Notifications from 'expo-notifications';
 
 function RootLayoutNav() {
   const { session, loading, isConfigured, ownerError, hasSetup } = useAuth();
@@ -30,19 +29,33 @@ function RootLayoutNav() {
     }
   }, [session, loading, segments, ownerError, hasSetup, isConfigured]);
 
-  // Handle Notifications
+  // Handle Notifications (Dynamic import to avoid Expo Go SDK 53 crash)
   useEffect(() => {
-    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response.notification.request.content.data as any;
-      if (data?.route) {
-        try {
-          router.push(data.route);
-        } catch (e) {
-          console.error("Navigation error from notification", e);
-        }
+    let subscription: any = null;
+    (async () => {
+      try {
+        const { getNotifications } = await import('../features/notifications/notificationService');
+        const Notifications = await getNotifications();
+        if (!Notifications) return; // Silent fallback for Expo Go
+
+        subscription = Notifications.addNotificationResponseReceivedListener(response => {
+          const data = response.notification.request.content.data as any;
+          if (data?.route) {
+            try {
+              router.push(data.route);
+            } catch (e) {
+              console.error("Navigation error from notification", e);
+            }
+          }
+        });
+      } catch (e) {
+        console.warn('Notifications not available in this environment');
       }
-    });
-    return () => subscription.remove();
+    })();
+    
+    return () => {
+      if (subscription) subscription.remove();
+    };
   }, [router]);
 
   if (loading) {
