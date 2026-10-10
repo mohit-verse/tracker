@@ -82,10 +82,20 @@ export const reconcileDailyReminders = async (
   settings?: NotificationSettings
 ): Promise<void> => {
   const Notifications = await getNotifications();
-  if (!Notifications) return; // Expo Go — degrade gracefully
+  if (!Notifications) return; // Expo Go - degrade gracefully
 
   try {
-    await Notifications.cancelAllScheduledNotificationsAsync();
+    let scheduled: any[] = [];
+    try {
+      scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    } catch (e) {}
+
+    // Only cancel attendance reminders
+    for (const req of scheduled) {
+      if (req.identifier.startsWith('attendance_reminder_')) {
+        await Notifications.cancelScheduledNotificationAsync(req.identifier).catch(() => {});
+      }
+    }
 
     if (!settings || !settings.dailyReminderEnabled) {
       return;
@@ -105,22 +115,24 @@ export const reconcileDailyReminders = async (
         const expoWeekday = dayOfWeek + 1;
 
         await Notifications.scheduleNotificationAsync({
+          identifier: `attendance_reminder_${dayOfWeek}`,
           content: {
             title: 'Attendance Reminder',
-            body: 'You have attendance-bearing sessions today. Tap to record your attendance.',
+            body: 'You have classes pending today. Tap to record your attendance.',
+            data: { route: '/(tabs)' },
           },
           trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
+            type: 'calendar',
             hour,
             minute,
             weekday: expoWeekday,
             repeats: true,
-          },
+          } as any,
         });
       }
     }
-  } catch {
-    // Notification failure must not break attendance tracking
+  } catch (e) {
+    console.warn('[Notifications] Failed to schedule daily reminder', e);
   }
 };
 

@@ -37,6 +37,18 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
+export async function resetDatabaseConnection(): Promise<void> {
+  if (dbPromise) {
+    try {
+      const db = await dbPromise;
+      await db.closeAsync();
+    } catch (e) {
+      // Ignore closing errors
+    }
+    dbPromise = null;
+  }
+}
+
 /**
  * Helper to execute a function within an exclusive transaction.
  */

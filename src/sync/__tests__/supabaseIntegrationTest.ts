@@ -15,7 +15,7 @@ async function runLiveIntegrationTest() {
   if (!supabaseUrl || !anonKey) {
     console.error('❌ Integration Test Blocker: EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY is missing.');
     console.log('Test harness is ready. Please configure a dedicated Supabase project with these variables and run this script again.');
-    process.exit(0);
+    process.exit(1);
   }
 
   console.log('1. Environment verified. Connecting to Supabase...');

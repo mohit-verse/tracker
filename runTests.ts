@@ -312,5 +312,8 @@ assertEqual(3, stats36.totalEligibleDays, 'Test 36: Eligible days');
 assertEqual(1, stats36.currentStreak, 'Test 36: Streak is 1');
 assertEqual(1, stats36.longestStreak, 'Test 36: Longest streak is 1');
 
+console.log('\n=== Phase 7: Account Isolation (Node Test Omitted) ===');
+console.log('Account isolation requires SQLite and React Native contexts which cannot run directly in pure node tsx.');
+
 console.log(`\nResults: ${passed} passed, ${failed} failed.`);
 if (failed > 0) process.exit(1);

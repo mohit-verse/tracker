@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { StorageService } from '../../storage/StorageService';
@@ -46,7 +46,7 @@ export const exportAndShareBackup = async (): Promise<void> => {
   const backup = await exportBackup();
   const json = JSON.stringify(backup, null, 2);
   const fileName = `tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  const filePath = `${FileSystem.documentDirectory}${fileName}`;
+  const filePath = `${FileSystem.Paths.document.uri}${fileName}`;
 
   await FileSystem.writeAsStringAsync(filePath, json, {
     encoding: FileSystem.EncodingType.UTF8,
@@ -99,7 +99,26 @@ export const pickBackupFile = async (): Promise<unknown | null> => {
  */
 export const createSafetySnapshot = async (): Promise<void> => {
   const backup = await exportBackup();
-  await StorageService.set(SAFETY_SNAPSHOT_KEY, backup);
+  const json = JSON.stringify(backup);
+  const dir = `${FileSystem.Paths.document.uri}safety_backups/`;
+  
+  const dirInfo = await FileSystem.getInfoAsync(dir);
+  if (!dirInfo.exists) {
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  }
+
+  // List existing files
+  const files = await FileSystem.readDirectoryAsync(dir);
+  files.sort(); // Sorting by timestamp since we'll include it in name
+
+  // If we have 3 or more, delete the oldest
+  while (files.length >= 3) {
+    const oldest = files.shift();
+    if (oldest) await FileSystem.deleteAsync(`${dir}${oldest}`);
+  }
+
+  const fileName = `snapshot-${Date.now()}.json`;
+  await FileSystem.writeAsStringAsync(`${dir}${fileName}`, json);
 };
 
 /**
@@ -107,16 +126,29 @@ export const createSafetySnapshot = async (): Promise<void> => {
  * Used if a restore operation fails partway through.
  */
 export const recoverFromSnapshot = async (): Promise<boolean> => {
-  const snapshot = await StorageService.get<BackupDocument>(SAFETY_SNAPSHOT_KEY);
-  if (!snapshot || !snapshot.data) {
-    return false;
-  }
+  const dir = `${FileSystem.Paths.document.uri}safety_backups/`;
+  const dirInfo = await FileSystem.getInfoAsync(dir);
+  if (!dirInfo.exists) return false;
+
+  const files = await FileSystem.readDirectoryAsync(dir);
+  if (files.length === 0) return false;
+
+  files.sort(); // Ascending
+  const newest = files[files.length - 1];
 
   try {
+    const jsonStr = await FileSystem.readAsStringAsync(`${dir}${newest}`);
+    const snapshot: BackupDocument = JSON.parse(jsonStr);
+    
+    if (!snapshot || !snapshot.data) return false;
+
     await restoreBackupData(
       snapshot.data.attendanceRecords,
       snapshot.data.timetable,
-      snapshot.data.settings, snapshot.exportedAt
+      snapshot.data.settings,
+      snapshot.exportedAt,
+      snapshot.data.habits || [],
+      snapshot.data.habitEntries || []
     );
     return true;
   } catch {
