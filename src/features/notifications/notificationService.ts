@@ -175,3 +175,74 @@ export const areNotificationsAvailable = async (): Promise<boolean> => {
   const mod = await getNotifications();
   return mod !== null;
 };
+
+export const reconcileHabitReminders = async (
+  habits: any[],
+  entriesMap: Record<string, any[]>
+) => {
+  const Notifications = await getNotifications();
+  if (!Notifications) {
+    console.warn('[Notifications] Not supported in this runtime. Skipping habit reminders.');
+    return;
+  }
+  
+  const todayStr = new Date().toISOString().split('T')[0];
+  const activeHabitIds = new Set(habits.map(h => h.id));
+
+  // Get all currently scheduled notifications to catch deleted habits
+  let scheduled: any[] = [];
+  try {
+    scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  } catch (e) {}
+
+  for (const req of scheduled) {
+    if (req.identifier.startsWith('habit_reminder_')) {
+      const hId = req.identifier.replace('habit_reminder_', '');
+      // If habit was deleted, cancel its reminder
+      if (!activeHabitIds.has(hId)) {
+        await Notifications.cancelScheduledNotificationAsync(req.identifier).catch(() => {});
+      }
+    }
+  }
+
+  for (const habit of habits) {
+    const reminderId = `habit_reminder_${habit.id}`;
+    
+    // First cancel existing to reset state for this specific habit
+    try {
+      await Notifications.cancelScheduledNotificationAsync(reminderId);
+    } catch (e) {}
+
+    // Check eligibility
+    if (!habit.reminder_enabled || !habit.reminder_time) continue;
+    if (habit.start_date > todayStr) continue; // Not started yet
+
+    const entries = entriesMap[habit.id] || [];
+    const isCheckedToday = entries.some((e: any) => e.date === todayStr);
+
+    if (isCheckedToday) continue; // Already checked today, skip reminder
+
+    // Parse time
+    const [hours, minutes] = habit.reminder_time.split(':').map(Number);
+    if (isNaN(hours) || isNaN(minutes)) continue;
+
+    try {
+      await Notifications.scheduleNotificationAsync({
+        identifier: reminderId,
+        content: {
+          title: 'Habit Reminder',
+          body: `Don't forget to complete your habit: ${habit.name}`,
+          data: { type: 'habit', habitId: habit.id, route: '/(tabs)/habits' },
+        },
+        trigger: {
+          type: 'calendar',
+          hour: hours,
+          minute: minutes,
+          repeats: true,
+        } as any,
+      });
+    } catch (e) {
+      console.warn(`[Notifications] Failed to schedule habit reminder for ${habit.id}`, e);
+    }
+  }
+};

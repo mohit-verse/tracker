@@ -59,6 +59,8 @@ export interface BackupData {
   timetable: TimetableEntry[];
   settings: AppSettings;
   subjects?: Subject[];
+  habits?: Habit[];
+  habitEntries?: HabitEntry[];
 }
 
 export interface BackupDocument {
@@ -71,4 +73,27 @@ export interface BackupDocument {
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
+}
+
+export interface Habit {
+  id: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  frequency_type: 'daily' | 'weekly';
+  target_count: number;
+  start_date: string; // YYYY-MM-DD
+  reminder_time?: string | null; // HH:mm
+  reminder_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HabitEntry {
+  id: string;
+  habit_id: string;
+  date: string; // YYYY-MM-DD
+  count: number;
+  created_at: string;
+  updated_at: string;
 }

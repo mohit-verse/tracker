@@ -2,18 +2,20 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { StorageService } from '../../storage/StorageService';
+import { getAttendanceRecords, getTimetable, getSettings, restoreBackupData } from '../../db/repositories';
 import {
   AttendanceRecord,
   TimetableEntry,
   AppSettings,
   BackupDocument,
   ValidationResult,
+  Habit,
+  HabitEntry,
 } from '../../types';
 import { createBackupDocument, validateBackupDocument } from './backupService';
 
-const ATTENDANCE_KEY = '@tracker_attendance_records';
-const TIMETABLE_KEY = '@tracker_timetable';
-const SETTINGS_KEY = '@tracker_settings';
+import { getHabits, getHabitEntriesByHabit } from '../../db/habitRepositories';
+
 const SAFETY_SNAPSHOT_KEY = '@tracker_safety_snapshot';
 
 /**
@@ -21,14 +23,20 @@ const SAFETY_SNAPSHOT_KEY = '@tracker_safety_snapshot';
  * Does NOT modify local data.
  */
 export const exportBackup = async (): Promise<BackupDocument> => {
-  const records = await StorageService.get<AttendanceRecord[]>(ATTENDANCE_KEY) || [];
-  const timetable = await StorageService.get<TimetableEntry[]>(TIMETABLE_KEY) || [];
-  const settings = await StorageService.get<AppSettings>(SETTINGS_KEY) || {
+  const records = await getAttendanceRecords() || [];
+  const timetable = await getTimetable() || [];
+  const settings = await getSettings() || {
     studentBatch: 'Batch I' as const,
     targetPercentage: 0.75,
   };
+  const habits = await getHabits() || [];
+  let habitEntries: HabitEntry[] = [];
+  for (const h of habits) {
+    const entries = await getHabitEntriesByHabit(h.id);
+    habitEntries = habitEntries.concat(entries);
+  }
 
-  return createBackupDocument(records, timetable, settings);
+  return createBackupDocument(records, timetable, settings, habits, habitEntries);
 };
 
 /**
@@ -87,7 +95,7 @@ export const pickBackupFile = async (): Promise<unknown | null> => {
 
 /**
  * Creates a safety snapshot of all current local data before destructive operations.
- * Stored under a dedicated key so it can be recovered if restore fails.
+ * Stored under a dedicated AsyncStorage key so it can be recovered if restore fails.
  */
 export const createSafetySnapshot = async (): Promise<void> => {
   const backup = await exportBackup();
@@ -105,9 +113,11 @@ export const recoverFromSnapshot = async (): Promise<boolean> => {
   }
 
   try {
-    await StorageService.set(ATTENDANCE_KEY, snapshot.data.attendanceRecords);
-    await StorageService.set(TIMETABLE_KEY, snapshot.data.timetable);
-    await StorageService.set(SETTINGS_KEY, snapshot.data.settings);
+    await restoreBackupData(
+      snapshot.data.attendanceRecords,
+      snapshot.data.timetable,
+      snapshot.data.settings, snapshot.exportedAt
+    );
     return true;
   } catch {
     return false;
@@ -117,12 +127,6 @@ export const recoverFromSnapshot = async (): Promise<boolean> => {
 /**
  * Restores local data from a validated BackupDocument.
  * MUST be called only after validation passes and user confirms.
- *
- * Flow:
- * 1. Create safety snapshot
- * 2. Replace local data
- * 3. Verify replacement
- * 4. If verification fails, recover from snapshot
  */
 export const restoreFromBackup = async (
   backup: BackupDocument
@@ -134,7 +138,7 @@ export const restoreFromBackup = async (
     return { success: false, error: 'Failed to create safety snapshot. Local data was NOT modified.' };
   }
 
-  // Step 2: Replace local data
+  // Step 2: Replace local SQLite data inside a single transaction
   try {
     const cleanSettings: AppSettings = {
       studentBatch: backup.data.settings.studentBatch,
@@ -170,11 +174,10 @@ export const restoreFromBackup = async (
       batchConstraint: t.batchConstraint
     }));
 
-    await StorageService.set(ATTENDANCE_KEY, cleanRecords);
-    await StorageService.set(TIMETABLE_KEY, cleanTimetable);
-    await StorageService.set(SETTINGS_KEY, cleanSettings);
+    const { conflicts } = await restoreBackupData(cleanRecords, cleanTimetable, cleanSettings, backup.exportedAt); if (conflicts.length > 0) { console.warn("Backup restored with conflicts:", conflicts); }
+    
   } catch (e) {
-    // Partial failure — attempt recovery
+    // Partial failure 
     const recovered = await recoverFromSnapshot();
     if (recovered) {
       return { success: false, error: 'Restore failed during write. Previous data has been recovered from the safety snapshot.' };
@@ -182,11 +185,11 @@ export const restoreFromBackup = async (
     return { success: false, error: 'CRITICAL: Restore failed and recovery also failed. Your previous data was saved as a safety snapshot.' };
   }
 
-  // Step 3: Verify replacement
+  // Step 3: Verify replacement (Assuming transaction guarantees this, but we can read it to be 100% sure)
   try {
-    const verifyRecords = await StorageService.get<AttendanceRecord[]>(ATTENDANCE_KEY);
-    const verifyTimetable = await StorageService.get<TimetableEntry[]>(TIMETABLE_KEY);
-    const verifySettings = await StorageService.get<AppSettings>(SETTINGS_KEY);
+    const verifyRecords = await getAttendanceRecords();
+    const verifyTimetable = await getTimetable();
+    const verifySettings = await getSettings();
 
     if (
       !verifyRecords ||
@@ -195,7 +198,7 @@ export const restoreFromBackup = async (
       verifyRecords.length !== backup.data.attendanceRecords.length ||
       verifyTimetable.length !== backup.data.timetable.length
     ) {
-      // Verification failed — recover
+      // Verification failed
       const recovered = await recoverFromSnapshot();
       if (recovered) {
         return { success: false, error: 'Restore verification failed. Previous data has been recovered.' };
@@ -207,6 +210,5 @@ export const restoreFromBackup = async (
     return { success: false, error: 'Could not verify restored data.' };
   }
 
-  // Step 4: Clean up snapshot (optional, keep it as extra safety)
   return { success: true };
 };

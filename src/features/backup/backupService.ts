@@ -14,10 +14,14 @@ const APP_ID = 'tracker';
  * Creates a versioned backup document from current app state.
  * Does NOT modify any local data.
  */
+import { Habit, HabitEntry } from '../../types';
+
 export const createBackupDocument = (
   attendanceRecords: AttendanceRecord[],
   timetable: TimetableEntry[],
-  settings: AppSettings
+  settings: AppSettings,
+  habits: Habit[] = [],
+  habitEntries: HabitEntry[] = []
 ): BackupDocument => {
   return {
     appId: APP_ID,
@@ -27,6 +31,8 @@ export const createBackupDocument = (
       attendanceRecords,
       timetable,
       settings,
+      habits,
+      habitEntries
     },
   };
 };

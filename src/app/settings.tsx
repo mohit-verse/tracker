@@ -2,14 +2,14 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch, TextInput, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
-import { theme } from '../../theme/theme';
-import { useAttendance } from '../../data/useAttendance';
-import { useTimetable } from '../../data/useTimetable';
-import { exportAndShareBackup, pickBackupFile, restoreFromBackup } from '../../features/backup/backupIO';
-import { validateBackupDocument } from '../../features/backup/backupService';
-import { BackupDocument } from '../../types';
-import { requestNotificationPermissions, reconcileDailyReminders } from '../../features/notifications/notificationService';
-import { BackgroundGlow } from '../../components/BackgroundGlow';
+import { theme } from '../theme/theme';
+import { useAttendance } from '../data/useAttendance';
+import { useTimetable } from '../data/useTimetable';
+import { exportAndShareBackup, pickBackupFile, restoreFromBackup } from '../features/backup/backupIO';
+import { validateBackupDocument } from '../features/backup/backupService';
+import { BackupDocument } from '../types';
+import { requestNotificationPermissions, reconcileDailyReminders } from '../features/notifications/notificationService';
+import { BackgroundGlow } from '../components/BackgroundGlow';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function SettingsScreen() {
@@ -142,7 +142,7 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const { createSafetySnapshot } = await import('../../features/backup/backupIO');
+              const { createSafetySnapshot } = await import('../features/backup/backupIO');
               await createSafetySnapshot();
             } catch (e) {
               Alert.alert('Snapshot Failed', 'Could not create a safety snapshot. Reset aborted.');
@@ -150,7 +150,7 @@ export default function SettingsScreen() {
             }
 
             try {
-              const { StorageService } = await import('../../storage/StorageService');
+              const { StorageService } = await import('../storage/StorageService');
               await StorageService.clear();
               await updateSettings({ studentBatch: 'Batch I', targetPercentage: 0.75, notificationSettings: { dailyReminderEnabled: false, riskAlertsEnabled: false, reminderTime: '18:00' } });
               await loadTimetable();

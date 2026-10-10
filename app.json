@@ -39,7 +39,8 @@
         {
           "appleTeamId": "YOUR_TEAM_ID"
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true

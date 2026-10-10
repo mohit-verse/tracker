@@ -248,5 +248,69 @@ const badBackup30 = {
 const badResult30 = validateBackupDocument(badBackup30 as any);
 assertTrue(!badResult30.valid, 'Test 30: Deep/malformed structure is rejected');
 
+import { calculateHabitStats } from './src/features/habits/habitAnalytics';
+
+console.log('\n=== Milestone 8: Habit Analytics Domain ===');
+
+const baseHabit = {
+  id: 'h1',
+  name: 'Read',
+  frequency_type: 'daily' as const,
+  target_count: 1,
+  start_date: '2023-10-01',
+  reminder_enabled: false,
+  created_at: '2023-10-01',
+  updated_at: '2023-10-01'
+};
+
+const createEntry = (date: string) => ({
+  id: `e_${date}`,
+  habit_id: 'h1',
+  date,
+  count: 1,
+  created_at: date,
+  updated_at: date
+});
+
+// Test 31: calculates 0 streaks if start_date is in the future
+const stats1 = calculateHabitStats(baseHabit, [], '2023-09-30');
+assertEqual(0, stats1.currentStreak, 'Test 31: Future start date current streak');
+assertEqual(0, stats1.longestStreak, 'Test 31: Future start date longest streak');
+
+// Test 32: calculates correct eligible days and unbroken streak
+const entries32 = [createEntry('2023-10-01'), createEntry('2023-10-02'), createEntry('2023-10-03')];
+const stats32 = calculateHabitStats(baseHabit, entries32, '2023-10-03');
+assertEqual(3, stats32.totalEligibleDays, 'Test 32: Unbroken eligible days');
+assertEqual(3, stats32.currentStreak, 'Test 32: Unbroken current streak');
+assertEqual(1, stats32.completionRate, 'Test 32: Unbroken completion rate');
+
+// Test 33: does not break streak if today is missing (grace period)
+const entries33 = [createEntry('2023-10-01'), createEntry('2023-10-02')];
+const stats33 = calculateHabitStats(baseHabit, entries33, '2023-10-03');
+assertEqual(2, stats33.currentStreak, 'Test 33: Grace period current streak');
+assertEqual(2, stats33.longestStreak, 'Test 33: Grace period longest streak');
+
+// Test 34: breaks streak if a past day is missing
+const entries34 = [createEntry('2023-10-01'), createEntry('2023-10-02'), createEntry('2023-10-04')];
+const stats34 = calculateHabitStats(baseHabit, entries34, '2023-10-04');
+assertEqual(4, stats34.totalEligibleDays, 'Test 34: Broken eligible days');
+assertEqual(3, stats34.totalCompletedDays, 'Test 34: Broken completed days');
+assertEqual(1, stats34.currentStreak, 'Test 34: Broken current streak');
+assertEqual(2, stats34.longestStreak, 'Test 34: Broken longest streak');
+
+// Test 35: completely empty history returns zeros
+const stats35 = calculateHabitStats(baseHabit, [], '2023-10-04');
+assertEqual(4, stats35.totalEligibleDays, 'Test 35: Empty eligible days');
+assertEqual(0, stats35.totalCompletedDays, 'Test 35: Empty completed');
+assertEqual(0, stats35.currentStreak, 'Test 35: Empty current streak');
+assertEqual(0, stats35.longestStreak, 'Test 35: Empty longest streak');
+
+// Test 36: missing grace period followed by check (if checking today after missing yesterday, streak is still 1)
+const entries36 = [createEntry('2023-10-01'), createEntry('2023-10-03')];
+const stats36 = calculateHabitStats(baseHabit, entries36, '2023-10-03');
+assertEqual(3, stats36.totalEligibleDays, 'Test 36: Eligible days');
+assertEqual(1, stats36.currentStreak, 'Test 36: Streak is 1');
+assertEqual(1, stats36.longestStreak, 'Test 36: Longest streak is 1');
+
 console.log(`\nResults: ${passed} passed, ${failed} failed.`);
 if (failed > 0) process.exit(1);

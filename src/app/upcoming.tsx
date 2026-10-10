@@ -2,12 +2,12 @@ import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../../theme/theme';
-import { useTimetable } from '../../data/useTimetable';
-import { useAttendance } from '../../data/useAttendance';
-import { TimetableEntry } from '../../types';
-import { MOCK_SUBJECTS } from '../../data/mock';
-import { getApplicableSessions } from '../../features/attendance/attendanceService';
+import { theme } from '../theme/theme';
+import { useTimetable } from '../data/useTimetable';
+import { useAttendance } from '../data/useAttendance';
+import { TimetableEntry } from '../types';
+import { MOCK_SUBJECTS } from '../data/mock';
+import { getApplicableSessions } from '../features/attendance/attendanceService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function UpcomingScreen() {

@@ -75,20 +75,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="upcoming"
+        name="habits"
         options={{
-          title: 'Upcoming',
+          title: 'Habits',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="time" size={size} color={color} />
+            <Ionicons name="checkmark-circle-outline" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="settings"
+        name="profile"
         options={{
-          title: 'Settings',
+          title: 'My Profile',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings" size={size} color={color} />
+            <Ionicons name="person" size={size} color={color} />
           ),
         }}
       />
