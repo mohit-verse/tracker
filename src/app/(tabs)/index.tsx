@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { View, StyleSheet, FlatList, Text, TouchableOpacity, Alert, Platform } from 'react-native';
+import { View, StyleSheet, FlatList, Text, TouchableOpacity, Alert, Platform, Modal, TextInput, KeyboardAvoidingView, ScrollView } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme/theme';
@@ -11,11 +11,16 @@ import { Subject, BatchType, TimetableEntry } from '../../types';
 import { BackgroundGlow } from '../../components/BackgroundGlow';
 import { SemesterModal } from '../../components/SemesterModal';
 import { formatTo12hDisplay } from '../../components/NativeTimePicker';
+import { getLocalDateString } from '../../utils/dateUtils';
+import { formatSubjectDisplayName } from '../../utils/subjectUtils';
 
 export default function DashboardScreen() {
   const { 
     subjects, 
     records,
+    holidays,
+    markHoliday,
+    removeHoliday,
     getSubjectSummary, 
     getOverallSummary, 
     settings, 
@@ -31,6 +36,12 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const [semesterModalVisible, setSemesterModalVisible] = useState(false);
 
+  // Manage Holidays Modal state
+  const [holidayModalVisible, setHolidayModalVisible] = useState(false);
+  const [newHolidayDate, setNewHolidayDate] = useState('');
+  const [newHolidayName, setNewHolidayName] = useState('');
+  const [savingHoliday, setSavingHoliday] = useState(false);
+
   useFocusEffect(
     useCallback(() => {
       loadData();
@@ -42,7 +53,7 @@ export default function DashboardScreen() {
 
   // Derive today's local date
   const now = new Date();
-  const todayDateStr = now.toISOString().split('T')[0];
+  const todayDateStr = getLocalDateString(now);
   const isTodayHoliday = isHoliday(todayDateStr);
   const todaySessions = useMemo(() => getTodaySessions(now), [getTodaySessions, now]);
 
@@ -64,12 +75,7 @@ export default function DashboardScreen() {
   };
 
   const getSubjectName = (subjectId: string, displayName?: string): string => {
-    if (displayName) return displayName;
-    if (subjectId === 'sports') return 'Sports';
-    if (subjectId === 'library') return 'Library';
-    const s = subjects.find(sub => sub.id === subjectId);
-    if (s) return s.name;
-    return 'Subject';
+    return formatSubjectDisplayName({ subjectId, displayName, subjects });
   };
 
   const handleQuickMark = async (session: TimetableEntry, status: 'present' | 'absent') => {
@@ -87,17 +93,37 @@ export default function DashboardScreen() {
     }
   };
 
+  const handleAddHoliday = async () => {
+    const targetDate = newHolidayDate.trim() || todayDateStr;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+      Alert.alert('Invalid Date', 'Please enter a valid date in YYYY-MM-DD format.');
+      return;
+    }
+
+    try {
+      setSavingHoliday(true);
+      await markHoliday(targetDate, newHolidayName.trim() || 'Holiday');
+      setNewHolidayName('');
+      setNewHolidayDate('');
+      Alert.alert('Success', `Holiday added for ${targetDate}`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not add holiday');
+    } finally {
+      setSavingHoliday(false);
+    }
+  };
+
   const renderSubjectItem = useCallback(({ item }: { item: Subject }) => {
-    const theorySummary = item.hasTheory ? getSubjectSummary(item.id, 'theory') : null;
-    const practicalSummary = item.hasPractical ? getSubjectSummary(item.id, 'practical') : null;
+    const theorySummary = getSubjectSummary(item.id, 'theory');
+    const practicalSummary = getSubjectSummary(item.id, 'practical');
 
     return (
       <SubjectAttendanceCard
         name={item.name}
         hasTheory={item.hasTheory}
         hasPractical={item.hasPractical}
-        theorySummary={item.hasTheory ? theorySummary : undefined}
-        practicalSummary={item.hasPractical ? practicalSummary : undefined}
+        theorySummary={theorySummary}
+        practicalSummary={practicalSummary}
         onPress={() => router.push(`/subject/${item.id}`)}
       />
     );
@@ -161,6 +187,20 @@ export default function DashboardScreen() {
               </View>
 
               <View style={styles.topActions}>
+                <TouchableOpacity 
+                  style={styles.holidayHeaderBtn} 
+                  onPress={() => setHolidayModalVisible(true)}
+                  accessibilityLabel="Manage Holidays"
+                >
+                  <Ionicons name="calendar-outline" size={15} color={theme.colors.primary} style={{ marginRight: 4 }} />
+                  <Text style={styles.holidayHeaderBtnText}>Holidays</Text>
+                  {holidays.length > 0 && (
+                    <View style={styles.holidayBadge}>
+                      <Text style={styles.holidayBadgeText}>{holidays.length}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+
                 <TouchableOpacity 
                   style={styles.settingsIconBtn} 
                   onPress={() => router.push('/settings')}
@@ -273,7 +313,7 @@ export default function DashboardScreen() {
               </View>
             )}
 
-            {/* Today's Classes Header with Pending Count */}
+            {/* Today's Classes Header with Pending Count & Quick Holiday */}
             <View style={styles.todaySectionHeader}>
               <View>
                 <Text style={styles.sectionTitle}>Today's Classes</Text>
@@ -282,15 +322,43 @@ export default function DashboardScreen() {
                 </Text>
               </View>
 
-              {pendingCount > 0 ? (
-                <View style={styles.pendingBadge}>
-                  <Text style={styles.pendingBadgeText}>{pendingCount} pending</Text>
-                </View>
-              ) : todaySessions.length > 0 && !isTodayHoliday ? (
-                <View style={styles.completedBadge}>
-                  <Text style={styles.completedBadgeText}>Completed</Text>
-                </View>
-              ) : null}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {!isTodayHoliday && (
+                  <TouchableOpacity
+                    style={styles.markTodayHolidayPill}
+                    onPress={() => {
+                      Alert.alert(
+                        'Mark Today as Holiday',
+                        `Suspend scheduled classes for today (${todayDateStr})?`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Mark Holiday',
+                            onPress: async () => {
+                              await markHoliday(todayDateStr, 'Holiday');
+                            }
+                          }
+                        ]
+                      );
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Mark today as holiday"
+                  >
+                    <Ionicons name="sunny-outline" size={12} color={theme.colors.textMuted} style={{ marginRight: 4 }} />
+                    <Text style={styles.markTodayHolidayText}>Mark Holiday</Text>
+                  </TouchableOpacity>
+                )}
+
+                {pendingCount > 0 ? (
+                  <View style={styles.pendingBadge}>
+                    <Text style={styles.pendingBadgeText}>{pendingCount} pending</Text>
+                  </View>
+                ) : todaySessions.length > 0 && !isTodayHoliday ? (
+                  <View style={styles.completedBadge}>
+                    <Text style={styles.completedBadgeText}>Completed</Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
 
             {/* Today's Sessions List / Holiday / Empty State */}
@@ -299,8 +367,17 @@ export default function DashboardScreen() {
                 <Ionicons name="bed-outline" size={24} color={theme.colors.primary} style={{ marginRight: 12 }} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.holidayTitle}>Holiday Active Today</Text>
-                  <Text style={styles.holidayText}>Classes are canceled for this date. Enjoy your holiday!</Text>
+                  <Text style={styles.holidayText}>Classes are suspended for this date. Enjoy your day off!</Text>
                 </View>
+                <TouchableOpacity
+                  style={styles.unmarkHolidayBtn}
+                  onPress={async () => {
+                    await removeHoliday(todayDateStr);
+                  }}
+                  accessibilityLabel="Resume classes for today"
+                >
+                  <Text style={styles.unmarkHolidayBtnText}>Resume</Text>
+                </TouchableOpacity>
               </View>
             ) : todaySessions.length === 0 ? (
               <View style={styles.noClassesCard}>
@@ -425,6 +502,122 @@ export default function DashboardScreen() {
         visible={semesterModalVisible}
         onClose={() => setSemesterModalVisible(false)}
       />
+
+      {/* Manage Holidays Modal */}
+      <Modal
+        visible={holidayModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setHolidayModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Manage Holidays</Text>
+                <Text style={styles.modalSubtitle}>Suspends scheduled classes & reminders</Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.modalCloseBtn}
+                onPress={() => setHolidayModalVisible(false)}
+              >
+                <Ionicons name="close" size={20} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick Toggle for Today */}
+            <View style={styles.quickHolidayRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.quickHolidayTitle}>Today ({todayDateStr})</Text>
+                <Text style={styles.quickHolidaySub}>
+                  {isTodayHoliday ? 'Currently marked as Holiday' : 'Normal class schedule'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.quickHolidayToggle, isTodayHoliday ? styles.quickHolidayToggleActive : styles.quickHolidayToggleInactive]}
+                onPress={async () => {
+                  if (isTodayHoliday) {
+                    await removeHoliday(todayDateStr);
+                  } else {
+                    await markHoliday(todayDateStr, 'Holiday');
+                  }
+                }}
+              >
+                <Text style={[styles.quickHolidayToggleText, isTodayHoliday && { color: '#000' }]}>
+                  {isTodayHoliday ? 'Resume Classes' : 'Mark Holiday'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Add Holiday Form */}
+            <View style={styles.addHolidayForm}>
+              <Text style={styles.formSectionLabel}>Add Custom Holiday</Text>
+              <View style={styles.formRow}>
+                <TextInput
+                  style={[styles.holidayInput, { flex: 1.2 }]}
+                  placeholder={todayDateStr}
+                  placeholderTextColor={theme.colors.textMuted}
+                  value={newHolidayDate}
+                  onChangeText={setNewHolidayDate}
+                />
+                <TextInput
+                  style={[styles.holidayInput, { flex: 1.5 }]}
+                  placeholder="Name (Optional)"
+                  placeholderTextColor={theme.colors.textMuted}
+                  value={newHolidayName}
+                  onChangeText={setNewHolidayName}
+                />
+                <TouchableOpacity
+                  style={styles.addHolidayBtn}
+                  onPress={handleAddHoliday}
+                  disabled={savingHoliday}
+                >
+                  <Ionicons name="add" size={20} color="#000" />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.dateFormatHint}>Format: YYYY-MM-DD</Text>
+            </View>
+
+            {/* List of Marked Holidays */}
+            <Text style={styles.formSectionLabel}>Marked Holidays ({holidays.length})</Text>
+            <ScrollView style={styles.holidaysListScroll} showsVerticalScrollIndicator={false}>
+              {holidays.length === 0 ? (
+                <View style={styles.noHolidaysBox}>
+                  <Text style={styles.noHolidaysText}>No holidays marked for this semester.</Text>
+                </View>
+              ) : (
+                holidays.map((h) => (
+                  <View key={h.id || h.date} style={styles.holidayListItem}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.holidayItemDate}>{h.date}</Text>
+                      <Text style={styles.holidayItemName}>{h.name || 'Holiday'}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.deleteHolidayBtn}
+                      onPress={async () => {
+                        await removeHoliday(h.date);
+                      }}
+                      accessibilityLabel={`Delete holiday ${h.date}`}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={theme.colors.danger} />
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.modalDoneBtn}
+              onPress={() => setHolidayModalVisible(false)}
+            >
+              <Text style={styles.modalDoneBtnText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -877,5 +1070,220 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 14,
     fontWeight: theme.typography.weights.bold,
+  },
+  holidayHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: theme.borderRadius.l,
+    borderWidth: 1,
+    borderColor: 'rgba(199, 107, 53, 0.3)',
+    marginRight: 6,
+  },
+  holidayHeaderBtnText: {
+    color: theme.colors.primary,
+    fontSize: 12,
+    fontWeight: theme.typography.weights.semiBold,
+  },
+  holidayBadge: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    marginLeft: 4,
+  },
+  holidayBadgeText: {
+    color: '#000',
+    fontSize: 10,
+    fontWeight: theme.typography.weights.bold,
+  },
+  markTodayHolidayPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  markTodayHolidayText: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    fontWeight: theme.typography.weights.medium,
+  },
+  unmarkHolidayBtn: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: theme.borderRadius.s,
+    marginLeft: 8,
+  },
+  unmarkHolidayBtnText: {
+    color: '#000',
+    fontSize: 12,
+    fontWeight: theme.typography.weights.bold,
+  },
+  quickHolidayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#161616',
+    padding: 12,
+    borderRadius: theme.borderRadius.m,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  quickHolidayTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 14,
+    fontWeight: theme.typography.weights.bold,
+  },
+  quickHolidaySub: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  quickHolidayToggle: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: theme.borderRadius.s,
+  },
+  quickHolidayToggleActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  quickHolidayToggleInactive: {
+    backgroundColor: '#252525',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  quickHolidayToggleText: {
+    fontSize: 12,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.textPrimary,
+  },
+  addHolidayForm: {
+    marginBottom: 16,
+  },
+  formSectionLabel: {
+    fontSize: 12,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.textSecondary,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  formRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  holidayInput: {
+    backgroundColor: '#202020',
+    color: theme.colors.textPrimary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.s,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 13,
+  },
+  addHolidayBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: theme.borderRadius.s,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dateFormatHint: {
+    color: theme.colors.textMuted,
+    fontSize: 10,
+    marginTop: 4,
+  },
+  holidaysListScroll: {
+    maxHeight: 180,
+    marginBottom: 16,
+  },
+  noHolidaysBox: {
+    padding: 16,
+    alignItems: 'center',
+    backgroundColor: '#161616',
+    borderRadius: theme.borderRadius.m,
+  },
+  noHolidaysText: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+  },
+  holidayListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#161616',
+    padding: 10,
+    borderRadius: theme.borderRadius.s,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  holidayItemDate: {
+    color: theme.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: theme.typography.weights.bold,
+  },
+  holidayItemName: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  deleteHolidayBtn: {
+    padding: 6,
+  },
+  modalDoneBtn: {
+    backgroundColor: '#252525',
+    paddingVertical: 12,
+    borderRadius: theme.borderRadius.m,
+    alignItems: 'center',
+  },
+  modalDoneBtnText: {
+    color: theme.colors.textPrimary,
+    fontSize: 14,
+    fontWeight: theme.typography.weights.bold,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: theme.spacing.m,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.xl,
+    padding: theme.spacing.l,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.textPrimary,
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    padding: 4,
   },
 });

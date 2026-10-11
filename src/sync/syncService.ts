@@ -24,6 +24,15 @@ function cleanPayloadForSupabase(entityType: string, row: any): any {
     if ('is_attendance_bearing' in clean) clean.is_attendance_bearing = Boolean(clean.is_attendance_bearing);
   } else if (entityType === 'habits') {
     if ('reminder_enabled' in clean) clean.reminder_enabled = Boolean(clean.reminder_enabled);
+  } else if (entityType === 'attendance_baselines') {
+    if ('attended_weight' in clean && !('attended' in clean)) {
+      clean.attended = clean.attended_weight;
+    }
+    if ('conducted_weight' in clean && !('conducted' in clean)) {
+      clean.conducted = clean.conducted_weight;
+    }
+    delete clean.attended_weight;
+    delete clean.conducted_weight;
   }
   return clean;
 }
@@ -243,6 +252,11 @@ export async function pullRemoteChanges(): Promise<void> {
           }
 
           const localRow = await tx.getFirstAsync(`SELECT updated_at FROM ${table} WHERE ${idCol} = ?`, [idVal]) as { updated_at: string } | null;
+
+          if (table === 'attendance_baselines') {
+            if ('attended' in row && !('attended_weight' in row)) (row as any).attended_weight = (row as any).attended;
+            if ('conducted' in row && !('conducted_weight' in row)) (row as any).conducted_weight = (row as any).conducted;
+          }
 
           if (localRow) {
             const localUpdated = new Date(localRow.updated_at).getTime();

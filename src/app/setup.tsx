@@ -25,6 +25,8 @@ import {
   validateTimetableSlotInput 
 } from '../features/setup/setupDomain';
 import { NativeTimePicker } from '../components/NativeTimePicker';
+import { getLocalDateString } from '../utils/dateUtils';
+import { formatSubjectDisplayName } from '../utils/subjectUtils';
 
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -47,7 +49,7 @@ export default function SetupScreen() {
   // Step 1: Semester State
   const [semesterId, setSemesterId] = useState<string>('');
   const [semesterName, setSemesterName] = useState<string>('Semester 1');
-  const [startDate, setStartDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState<string>(() => getLocalDateString(new Date()));
 
   // Step 2: Subjects State
   const [subjectsList, setSubjectsList] = useState<Subject[]>([]);
@@ -227,6 +229,7 @@ export default function SetupScreen() {
       return;
     }
 
+    const subObj = subjectsList.find(s => s.id === selectedSubjectId);
     const newEntry: TimetableEntry = {
       id: uuidv4(),
       subjectId: selectedSubjectId,
@@ -237,6 +240,7 @@ export default function SetupScreen() {
       batchConstraint: slotBatch,
       isAttendanceBearing: true,
       weight: numericWeight,
+      displayName: subObj?.name || 'Subject',
     };
 
     try {
@@ -499,11 +503,15 @@ export default function SetupScreen() {
               <View style={styles.itemsListContainer}>
                 <Text style={styles.itemsListTitle}>Configured Slots ({timetable.length})</Text>
                 {timetable.map(entry => {
-                  const sub = subjectsList.find(s => s.id === entry.subjectId);
+                  const subName = formatSubjectDisplayName({
+                    subjectId: entry.subjectId,
+                    entryDisplayName: entry.displayName,
+                    subjects: subjectsList,
+                  });
                   return (
                     <View key={entry.id} style={styles.itemRow}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.itemName}>{sub?.name || entry.subjectId}</Text>
+                        <Text style={styles.itemName}>{subName}</Text>
                         <Text style={styles.itemMeta}>
                           {DAYS_SHORT[entry.dayOfWeek]} • {entry.startTime} – {entry.endTime} • {entry.component.toUpperCase()} • {entry.batchConstraint || 'All'}
                         </Text>

@@ -214,9 +214,24 @@ export default function ProfileScreen() {
             'cloud-upload-outline', 
             'Sync Now', 
             `Status: ${syncState} ${outboxCount > 0 ? `(${outboxCount} pending)` : ''}`, 
-            () => {
-              if (!isConfigured) Alert.alert('Unavailable', 'Supabase is not configured.');
-              else syncNow();
+            async () => {
+              if (!isConfigured) {
+                Alert.alert('Unavailable', 'Supabase is not configured.');
+                return;
+              }
+              const res = await syncNow();
+              if (res && !res.success) {
+                if (res.isMissingSchema) {
+                  Alert.alert(
+                    'Supabase Setup Required',
+                    'Your remote Supabase database has not been initialized with Tracker tables yet.\n\nPlease open your Supabase Project Dashboard -> SQL Editor, run the migrations from supabase/migrations, and try syncing again.'
+                  );
+                } else {
+                  Alert.alert('Sync Failed', res.error?.message || 'Failed to sync with cloud. Check network connection.');
+                }
+              } else if (res && res.success) {
+                Alert.alert('Synced', 'Cloud sync completed successfully.');
+              }
             }
           )}
           {renderActionItem('download-outline', 'Data Export / Backup', 'Export CSV spreadsheets or JSON snapshots', showExportOptions)}

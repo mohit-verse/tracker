@@ -4,7 +4,7 @@ import { processOutbox, pullRemoteChanges } from './syncService';
 import { getDatabase } from '../db';
 
 
-export type SyncState = 'Synced' | 'Waiting for internet' | 'Syncing' | 'Sync failed' | 'Authentication required';
+export type SyncState = 'Synced' | 'Waiting for internet' | 'Syncing' | 'Sync failed' | 'Authentication required' | 'DB setup required';
 
 export const useSync = () => {
   const [syncState, setSyncState] = useState<SyncState>('Authentication required');
@@ -65,13 +65,13 @@ export const useSync = () => {
   const syncNow = useCallback(async () => {
     if (!isSupabaseConfigured) {
       setSyncState('Authentication required');
-      return;
+      return { success: false, error: new Error('Supabase not configured') };
     }
 
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
       setSyncState('Authentication required');
-      return;
+      return { success: false, error: new Error('Session required') };
     }
 
     setSyncState('Syncing');
@@ -79,9 +79,19 @@ export const useSync = () => {
       await pullRemoteChanges();
       await processOutbox();
       await checkStatus();
+      return { success: true };
     } catch (e: any) {
-      console.warn('Manual sync failed:', e);
-      setSyncState('Sync failed');
+      const isMissingSchema = e?.code === 'PGRST205' || 
+        (typeof e?.message === 'string' && (e.message.includes('schema cache') || e.message.includes('Could not find the table')));
+
+      if (isMissingSchema) {
+        console.warn('[Sync] Remote Supabase schema not initialized (PGRST205: ' + (e.message || 'tables missing') + '). Run migrations in Supabase SQL Editor.');
+        setSyncState('DB setup required');
+      } else {
+        console.warn('Manual sync failed:', e?.message || e);
+        setSyncState('Sync failed');
+      }
+      return { success: false, error: e, isMissingSchema: !!isMissingSchema };
     }
   }, [checkStatus]);
 

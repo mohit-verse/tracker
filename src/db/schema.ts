@@ -15,10 +15,6 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   
   let currentDbVersion = result ? parseInt(result.value, 10) : 0;
   
-  if (currentDbVersion >= 2) {
-    return;
-  }
-
   // Version 1 migrations
   if (currentDbVersion === 0) {
     await db.withExclusiveTransactionAsync(async (tx) => {
@@ -135,8 +131,10 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
           id TEXT PRIMARY KEY,
           subject_id TEXT NOT NULL,
           component TEXT NOT NULL,
-          attended_weight INTEGER NOT NULL,
-          conducted_weight INTEGER NOT NULL,
+          attended_weight INTEGER NOT NULL DEFAULT 0,
+          conducted_weight INTEGER NOT NULL DEFAULT 0,
+          attended INTEGER NOT NULL DEFAULT 0,
+          conducted INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           sync_status TEXT NOT NULL DEFAULT 'pending',
@@ -269,4 +267,114 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
 
     currentDbVersion = 2;
   }
+
+  // Version 3 migrations: Baselines columns compatibility, subject UUID repair, and component flags
+  if (currentDbVersion < 3) {
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      // 1. Ensure attendance_baselines has attended and conducted columns for bidirectional sync
+      try {
+        await tx.execAsync(`ALTER TABLE attendance_baselines ADD COLUMN attended INTEGER DEFAULT 0;`);
+        await tx.execAsync(`ALTER TABLE attendance_baselines ADD COLUMN conducted INTEGER DEFAULT 0;`);
+      } catch (e) {}
+
+      // 2. Repair subjects that might have UUIDs as names
+      const subjectsWithUUID = await tx.getAllAsync<{ id: string; name: string }>(
+        `SELECT id, name FROM subjects WHERE name LIKE '________-____-____-____-____________'`
+      );
+      for (const sub of subjectsWithUUID) {
+        await tx.runAsync(`UPDATE subjects SET name = 'Subject' WHERE id = ?`, [sub.id]);
+      }
+
+      // 3. Ensure subjects with 0 theory and 0 practical get enabled appropriately
+      const zeroCompSubjects = await tx.getAllAsync<{ id: string }>(
+        `SELECT id FROM subjects WHERE has_theory = 0 AND has_practical = 0`
+      );
+      for (const zSub of zeroCompSubjects) {
+        const hasPracticalSession = await tx.getFirstAsync(
+          `SELECT 1 FROM class_sessions WHERE subject_id = ? AND component = 'practical' LIMIT 1`,
+          [zSub.id]
+        );
+        const hasPracticalRule = await tx.getFirstAsync(
+          `SELECT 1 FROM timetable_rules WHERE subject_id = ? AND component = 'practical' LIMIT 1`,
+          [zSub.id]
+        );
+        const hasPracticalBaseline = await tx.getFirstAsync(
+          `SELECT 1 FROM attendance_baselines WHERE subject_id = ? AND component = 'practical' LIMIT 1`,
+          [zSub.id]
+        );
+
+        const isPractical = !!(hasPracticalSession || hasPracticalRule || hasPracticalBaseline);
+        await tx.runAsync(
+          `UPDATE subjects SET has_theory = 1, has_practical = ? WHERE id = ?`,
+          [isPractical ? 1 : 0, zSub.id]
+        );
+      }
+
+      await tx.execAsync(`INSERT OR REPLACE INTO local_metadata (key, value) VALUES ('user_version', '3');`);
+    });
+
+    currentDbVersion = 3;
+  }
+
+  // Self-healing guard: unconditionally ensure attendance_baselines has all columns
+  try {
+    const tableInfo = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(attendance_baselines)`);
+    if (tableInfo.length > 0) {
+      const existingCols = new Set(tableInfo.map(c => c.name));
+      if (!existingCols.has('attended')) {
+        await db.execAsync(`ALTER TABLE attendance_baselines ADD COLUMN attended INTEGER DEFAULT 0;`);
+      }
+      if (!existingCols.has('conducted')) {
+        await db.execAsync(`ALTER TABLE attendance_baselines ADD COLUMN conducted INTEGER DEFAULT 0;`);
+      }
+      if (!existingCols.has('attended_weight')) {
+        await db.execAsync(`ALTER TABLE attendance_baselines ADD COLUMN attended_weight INTEGER DEFAULT 0;`);
+      }
+      if (!existingCols.has('conducted_weight')) {
+        await db.execAsync(`ALTER TABLE attendance_baselines ADD COLUMN conducted_weight INTEGER DEFAULT 0;`);
+      }
+    }
+  } catch (e) {
+    // Non-fatal if table not yet created
+  }
+
+  // Self-healing guard: reconcile subject ID references across tables and deduplicate
+  try {
+    const allSubjects = await db.getAllAsync<{ id: string; name: string }>(`SELECT id, name FROM subjects`);
+    if (allSubjects && allSubjects.length > 0) {
+      for (const sub of allSubjects) {
+        if (!sub.name || sub.name.trim().length === 0) continue;
+        await db.runAsync(
+          `UPDATE class_sessions SET subject_id = ? WHERE LOWER(subject_id) = LOWER(?) AND subject_id != ?`,
+          [sub.id, sub.name, sub.id]
+        );
+        await db.runAsync(
+          `UPDATE timetable_rules SET subject_id = ? WHERE LOWER(subject_id) = LOWER(?) AND subject_id != ?`,
+          [sub.id, sub.name, sub.id]
+        );
+        await db.runAsync(
+          `UPDATE attendance_baselines SET subject_id = ? WHERE LOWER(subject_id) = LOWER(?) AND subject_id != ?`,
+          [sub.id, sub.name, sub.id]
+        );
+      }
+
+      // Deduplicate subjects with identical names
+      const seenNames = new Map<string, string>();
+      for (const sub of allSubjects) {
+        const normName = sub.name.trim().toLowerCase();
+        if (seenNames.has(normName)) {
+          const canonicalId = seenNames.get(normName)!;
+          await db.runAsync(`UPDATE class_sessions SET subject_id = ? WHERE subject_id = ?`, [canonicalId, sub.id]);
+          await db.runAsync(`UPDATE timetable_rules SET subject_id = ? WHERE subject_id = ?`, [canonicalId, sub.id]);
+          await db.runAsync(`UPDATE attendance_baselines SET subject_id = ? WHERE subject_id = ?`, [canonicalId, sub.id]);
+          await db.runAsync(`DELETE FROM subjects WHERE id = ?`, [sub.id]);
+        } else {
+          seenNames.set(normName, sub.id);
+        }
+      }
+    }
+  } catch (e) {
+    // Non-fatal self-healing
+  }
 }
+

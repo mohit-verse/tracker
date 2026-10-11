@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme/theme';
@@ -11,6 +11,7 @@ import { AttendanceRecord, AttendanceSummary } from '../../types';
 import { getRequiredAttendanceWeight, getMaxMissableWeight } from '../../features/attendance/attendanceService';
 import { BackgroundGlow } from '../../components/BackgroundGlow';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { formatSubjectDisplayName, isSubjectMatch } from '../../utils/subjectUtils';
 
 const getSubjectIcon = (name: string): keyof typeof Ionicons.glyphMap => {
   const lower = name.toLowerCase();
@@ -30,6 +31,8 @@ export default function SubjectDetailScreen() {
     subjects,
     getSubjectRecords, 
     getSubjectSummary, 
+    saveBaseline,
+    getSubjectBaselines,
     deleteRecord, 
     saveRecord, 
     settings, 
@@ -43,8 +46,79 @@ export default function SubjectDetailScreen() {
   const [simulatedAttend, setSimulatedAttend] = useState(0);
   const [simulatedMiss, setSimulatedMiss] = useState(0);
 
+  // Baseline Modal state
+  const [baselineModalVisible, setBaselineModalVisible] = useState(false);
+  const [theoryAttendedInput, setTheoryAttendedInput] = useState('0');
+  const [theoryConductedInput, setTheoryConductedInput] = useState('0');
+  const [practicalAttendedInput, setPracticalAttendedInput] = useState('0');
+  const [practicalConductedInput, setPracticalConductedInput] = useState('0');
+  const [savingBaseline, setSavingBaseline] = useState(false);
+
   const subjectId = Array.isArray(id) ? id[0] : id;
-  const subject = subjects.find(s => s.id === subjectId) || MOCK_SUBJECTS.find(s => s.id === subjectId);
+  const subject = subjects.find(s => isSubjectMatch(s.id, subjectId, subjects)) || 
+                  MOCK_SUBJECTS.find(s => isSubjectMatch(s.id, subjectId, MOCK_SUBJECTS));
+
+  const displayName = subject 
+    ? formatSubjectDisplayName({ subjectId: subject.id, name: subject.name, subjects }) 
+    : 'Subject';
+
+  const baselines = subject ? getSubjectBaselines(subject.id) : {};
+  const hasTheoryBaseline = !!baselines.theory && ((baselines.theory.conducted ?? 0) > 0 || (baselines.theory.attended ?? 0) > 0);
+  const hasPracticalBaseline = !!baselines.practical && ((baselines.practical.conducted ?? 0) > 0 || (baselines.practical.attended ?? 0) > 0);
+
+  const theorySummary = subject ? getSubjectSummary(subject.id, 'theory') : null;
+  const practicalSummary = subject ? getSubjectSummary(subject.id, 'practical') : null;
+
+  const isTheoryActive = subject ? (subject.hasTheory || (theorySummary?.conductedWeight ?? 0) > 0 || hasTheoryBaseline) : false;
+  const isPracticalActive = subject ? (subject.hasPractical || (practicalSummary?.conductedWeight ?? 0) > 0 || hasPracticalBaseline) : false;
+
+  const showTheory = isTheoryActive || !isPracticalActive;
+  const showPractical = isPracticalActive;
+
+  const openBaselineModal = () => {
+    if (!subject) return;
+    const b = getSubjectBaselines(subject.id);
+    setTheoryAttendedInput(b.theory ? String(b.theory.attended) : '0');
+    setTheoryConductedInput(b.theory ? String(b.theory.conducted) : '0');
+    setPracticalAttendedInput(b.practical ? String(b.practical.attended) : '0');
+    setPracticalConductedInput(b.practical ? String(b.practical.conducted) : '0');
+    setBaselineModalVisible(true);
+  };
+
+  const handleSaveBaselines = async () => {
+    if (!subject) return;
+    const thAtt = parseInt(theoryAttendedInput.trim(), 10) || 0;
+    const thCond = parseInt(theoryConductedInput.trim(), 10) || 0;
+    const prAtt = parseInt(practicalAttendedInput.trim(), 10) || 0;
+    const prCond = parseInt(practicalConductedInput.trim(), 10) || 0;
+
+    if (thAtt < 0 || thCond < 0 || prAtt < 0 || prCond < 0) {
+      Alert.alert('Invalid Input', 'Attendance counts cannot be negative.');
+      return;
+    }
+    if (thAtt > thCond) {
+      Alert.alert('Invalid Input', 'Theory attended classes cannot exceed total conducted classes.');
+      return;
+    }
+    if (prAtt > prCond) {
+      Alert.alert('Invalid Input', 'Practical attended classes cannot exceed total conducted classes.');
+      return;
+    }
+
+    try {
+      setSavingBaseline(true);
+      await saveBaseline(subject.id, 'theory', thAtt, thCond);
+      if (prCond > 0 || prAtt > 0 || subject.hasPractical) {
+        await saveBaseline(subject.id, 'practical', prAtt, prCond);
+      }
+      setBaselineModalVisible(false);
+      Alert.alert('Success', 'Previous attendance updated successfully. All calculations now incorporate this baseline.');
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to save baseline attendance.');
+    } finally {
+      setSavingBaseline(false);
+    }
+  };
 
   if (!isLoaded) {
     return (
@@ -69,12 +143,11 @@ export default function SubjectDetailScreen() {
     );
   }
 
-  const theorySummary = subject.hasTheory ? getSubjectSummary(subject.id, 'theory') : null;
-  const practicalSummary = subject.hasPractical ? getSubjectSummary(subject.id, 'practical') : null;
-
   // Make sure planner filter makes sense
-  if (plannerFilter === 'theory' && !subject.hasTheory && subject.hasPractical) {
+  if (plannerFilter === 'theory' && !showTheory && showPractical) {
     setPlannerFilter('practical');
+  } else if (plannerFilter === 'practical' && !showPractical && showTheory) {
+    setPlannerFilter('theory');
   }
 
   const activePlannerSummary = plannerFilter === 'theory' ? theorySummary : practicalSummary;
@@ -210,12 +283,37 @@ export default function SubjectDetailScreen() {
             <Ionicons name={iconName} size={24} color={theme.colors.primary} />
           </View>
           <View style={styles.titleTextContainer}>
-            <Text style={styles.subjectName} numberOfLines={2}>{subject.name}</Text>
+            <Text style={styles.subjectName} numberOfLines={2}>{displayName}</Text>
             <Text style={styles.subjectComponentsText}>
-              {subject.hasTheory && subject.hasPractical ? 'Theory + Practical' : subject.hasTheory ? 'Theory' : 'Practical'}
+              {showTheory && showPractical ? 'Theory + Practical' : showTheory ? 'Theory' : 'Practical'}
             </Text>
           </View>
         </View>
+
+        {/* Previous Attendance / Baseline Button */}
+        <TouchableOpacity 
+          style={styles.baselineCardBtn}
+          onPress={openBaselineModal}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Set previous attendance"
+        >
+          <View style={styles.baselineCardIconBox}>
+            <Ionicons name="time-outline" size={18} color={theme.colors.primary} />
+          </View>
+          <View style={styles.baselineCardTextContainer}>
+            <Text style={styles.baselineCardTitle}>Previous / Baseline Attendance</Text>
+            <Text style={styles.baselineCardSubtitle}>
+              {hasTheoryBaseline || hasPracticalBaseline
+                ? `Active (${hasTheoryBaseline ? `Theory: ${baselines.theory?.attended}/${baselines.theory?.conducted}` : ''}${hasTheoryBaseline && hasPracticalBaseline ? ', ' : ''}${hasPracticalBaseline ? `Practical: ${baselines.practical?.attended}/${baselines.practical?.conducted}` : ''})`
+                : 'Enter past attendance before Tracker'}
+            </Text>
+          </View>
+          <View style={styles.baselineEditBadge}>
+            <Ionicons name="create-outline" size={14} color={theme.colors.primary} style={{ marginRight: 4 }} />
+            <Text style={styles.baselineEditText}>Edit</Text>
+          </View>
+        </TouchableOpacity>
 
         {/* Attendance Overview Card */}
         <View style={styles.card}>
@@ -224,12 +322,12 @@ export default function SubjectDetailScreen() {
             <Text style={styles.cardTitle}>Attendance Overview</Text>
           </View>
           <View style={styles.overviewRow}>
-            {subject.hasTheory && theorySummary !== undefined && (
+            {showTheory && (
               <SummaryComponent summary={theorySummary} label="Theory" />
             )}
-            {subject.hasPractical && practicalSummary !== undefined && (
+            {showPractical && (
               <>
-                {subject.hasTheory && <View style={styles.divider} />}
+                {showTheory && <View style={styles.divider} />}
                 <SummaryComponent summary={practicalSummary} label="Practical" />
               </>
             )}
@@ -243,7 +341,7 @@ export default function SubjectDetailScreen() {
               <Ionicons name="disc-outline" size={16} color={theme.colors.primary} style={{ marginRight: 8 }}/>
               <Text style={styles.cardTitle}>Attendance Planner</Text>
             </View>
-            {subject.hasTheory && subject.hasPractical && (
+            {showTheory && showPractical && (
               <View style={styles.pillGroup}>
                 <TouchableOpacity 
                   style={[styles.pill, plannerFilter === 'theory' && styles.pillActive]}
@@ -423,6 +521,135 @@ export default function SubjectDetailScreen() {
           <Text style={styles.timetableBtnText}>View Timetable</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Baseline Attendance Modal */}
+      <Modal
+        visible={baselineModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setBaselineModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Previous Attendance</Text>
+                <Text style={styles.modalSubtitle}>{displayName}</Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.modalCloseBtn}
+                onPress={() => setBaselineModalVisible(false)}
+              >
+                <Ionicons name="close" size={20} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalDescription}>
+              Enter classes attended and total conducted before using Tracker. Future marked attendance will be calculated in consideration of this baseline.
+            </Text>
+
+            {/* Theory Baseline Section */}
+            <View style={styles.modalSection}>
+              <View style={styles.modalSectionHeader}>
+                <Text style={styles.modalSectionTitle}>Theory Classes</Text>
+                {parseInt(theoryConductedInput || '0', 10) > 0 && (
+                  <Text style={styles.modalPreviewPercent}>
+                    {Math.round(((parseInt(theoryAttendedInput || '0', 10)) / (parseInt(theoryConductedInput || '1', 10))) * 100)}%
+                  </Text>
+                )}
+              </View>
+              <View style={styles.inputRow}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Attended</Text>
+                  <TextInput
+                    style={styles.numInput}
+                    keyboardType="number-pad"
+                    value={theoryAttendedInput}
+                    onChangeText={setTheoryAttendedInput}
+                    placeholder="0"
+                    placeholderTextColor={theme.colors.textMuted}
+                  />
+                </View>
+                <View style={styles.inputSeparatorBox}>
+                  <Text style={styles.inputSeparatorText}>/</Text>
+                </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Conducted</Text>
+                  <TextInput
+                    style={styles.numInput}
+                    keyboardType="number-pad"
+                    value={theoryConductedInput}
+                    onChangeText={setTheoryConductedInput}
+                    placeholder="0"
+                    placeholderTextColor={theme.colors.textMuted}
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* Practical Baseline Section */}
+            <View style={styles.modalSection}>
+              <View style={styles.modalSectionHeader}>
+                <Text style={styles.modalSectionTitle}>Practical Classes</Text>
+                {parseInt(practicalConductedInput || '0', 10) > 0 && (
+                  <Text style={styles.modalPreviewPercent}>
+                    {Math.round(((parseInt(practicalAttendedInput || '0', 10)) / (parseInt(practicalConductedInput || '1', 10))) * 100)}%
+                  </Text>
+                )}
+              </View>
+              <View style={styles.inputRow}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Attended</Text>
+                  <TextInput
+                    style={styles.numInput}
+                    keyboardType="number-pad"
+                    value={practicalAttendedInput}
+                    onChangeText={setPracticalAttendedInput}
+                    placeholder="0"
+                    placeholderTextColor={theme.colors.textMuted}
+                  />
+                </View>
+                <View style={styles.inputSeparatorBox}>
+                  <Text style={styles.inputSeparatorText}>/</Text>
+                </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Conducted</Text>
+                  <TextInput
+                    style={styles.numInput}
+                    keyboardType="number-pad"
+                    value={practicalConductedInput}
+                    onChangeText={setPracticalConductedInput}
+                    placeholder="0"
+                    placeholderTextColor={theme.colors.textMuted}
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* Modal Actions */}
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={styles.modalCancelBtn}
+                onPress={() => setBaselineModalVisible(false)}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.modalSaveBtn}
+                onPress={handleSaveBaselines}
+                disabled={savingBaseline}
+              >
+                <Text style={styles.modalSaveBtnText}>
+                  {savingBaseline ? 'Saving...' : 'Save Baseline'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -864,6 +1091,182 @@ const styles = StyleSheet.create({
   timetableBtnText: {
     color: theme.colors.textPrimary,
     fontSize: 14,
+    fontWeight: theme.typography.weights.bold,
+  },
+  baselineCardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.m,
+    borderRadius: theme.borderRadius.xl,
+    marginBottom: theme.spacing.m,
+    borderWidth: 1,
+    borderColor: 'rgba(199, 107, 53, 0.3)',
+  },
+  baselineCardIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(199, 107, 53, 0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  baselineCardTextContainer: {
+    flex: 1,
+  },
+  baselineCardTitle: {
+    fontSize: 14,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.textPrimary,
+  },
+  baselineCardSubtitle: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+  },
+  baselineEditBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(199, 107, 53, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  baselineEditText: {
+    fontSize: 12,
+    fontWeight: theme.typography.weights.semiBold,
+    color: theme.colors.primary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: theme.spacing.m,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.xl,
+    padding: theme.spacing.l,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.textPrimary,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: theme.colors.primary,
+    marginTop: 2,
+    fontWeight: theme.typography.weights.medium,
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalDescription: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    lineHeight: 17,
+    marginBottom: 16,
+  },
+  modalSection: {
+    backgroundColor: '#161616',
+    borderRadius: theme.borderRadius.m,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  modalSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalSectionTitle: {
+    fontSize: 13,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.textPrimary,
+  },
+  modalPreviewPercent: {
+    fontSize: 13,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.primary,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  inputGroup: {
+    flex: 1,
+  },
+  inputLabel: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginBottom: 4,
+  },
+  numInput: {
+    backgroundColor: '#202020',
+    color: theme.colors.textPrimary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.s,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 15,
+    fontWeight: theme.typography.weights.semiBold,
+    textAlign: 'center',
+  },
+  inputSeparatorBox: {
+    paddingHorizontal: 8,
+    paddingTop: 16,
+  },
+  inputSeparatorText: {
+    fontSize: 18,
+    color: theme.colors.textMuted,
+    fontWeight: theme.typography.weights.bold,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: theme.borderRadius.m,
+    backgroundColor: '#252525',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCancelBtnText: {
+    fontSize: 14,
+    color: theme.colors.textMuted,
+    fontWeight: theme.typography.weights.semiBold,
+  },
+  modalSaveBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: theme.borderRadius.m,
+    backgroundColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalSaveBtnText: {
+    fontSize: 14,
+    color: '#000',
     fontWeight: theme.typography.weights.bold,
   },
 });

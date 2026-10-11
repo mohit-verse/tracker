@@ -7,6 +7,8 @@ import { useAttendance } from '../data/useAttendance';
 import { LoadingState } from '../components/UIStates';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackgroundGlow } from '../components/BackgroundGlow';
+import { getLocalDateString } from '../utils/dateUtils';
+import { formatSubjectDisplayName } from '../utils/subjectUtils';
 
 function formatTo12Hour(timeStr: string): string {
   if (!timeStr) return '';
@@ -28,17 +30,59 @@ export default function AddAttendanceScreen() {
     getRecordsByDate, 
     saveRecord, 
     isHoliday,
+    markHoliday,
+    removeHoliday,
     isLoaded 
   } = useAttendance();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [statuses, setStatuses] = useState<Record<string, 'present' | 'absent'>>({});
   const insets = useSafeAreaInsets();
 
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
-  const dateString = useMemo(() => currentDate.toISOString().split('T')[0], [currentDate]);
+  const todayStr = useMemo(() => getLocalDateString(new Date()), []);
+  const dateString = useMemo(() => getLocalDateString(currentDate), [currentDate]);
   const isToday = todayStr === dateString;
   const isFuture = dateString > todayStr;
   const isDateHoliday = isHoliday(dateString);
+
+  const handleToggleHoliday = () => {
+    if (isDateHoliday) {
+      Alert.alert(
+        'Resume Classes',
+        `Remove holiday for ${dateString} and resume scheduled classes?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Resume Classes',
+            onPress: async () => {
+              try {
+                await removeHoliday(dateString);
+              } catch (e: any) {
+                Alert.alert('Error', e.message || 'Could not resume classes');
+              }
+            }
+          }
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Mark as Holiday',
+        `Suspend classes and mark ${dateString} as a holiday?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Mark Holiday',
+            onPress: async () => {
+              try {
+                await markHoliday(dateString, 'Holiday');
+              } catch (e: any) {
+                Alert.alert('Error', e.message || 'Could not mark holiday');
+              }
+            }
+          }
+        ]
+      );
+    }
+  };
 
   useEffect(() => {
     if (isLoaded) {
@@ -62,11 +106,12 @@ export default function AddAttendanceScreen() {
 
   const sessions = getTodaySessions(currentDate);
 
-  const getSubjectName = (id: string) => {
-    if (id === 'sports') return 'Sports';
-    if (id === 'library') return 'Library';
-    const sub = subjects.find(s => s.id === id);
-    return sub ? sub.name : id;
+  const getSubjectName = (id: string, entry?: any) => {
+    return formatSubjectDisplayName({
+      subjectId: id,
+      entryDisplayName: entry?.displayName || entry?.subjectName,
+      subjects,
+    });
   };
 
   const handleStatusSelect = async (session: any, requestedStatus: 'present' | 'absent') => {
@@ -118,7 +163,7 @@ export default function AddAttendanceScreen() {
       const toLabel = requestedStatus === 'present' ? 'Present' : 'Absent';
       Alert.alert(
         'Change Attendance Status',
-        `Change attendance for ${getSubjectName(session.subjectId)} from ${fromLabel} to ${toLabel}?`,
+        `Change attendance for ${getSubjectName(session.subjectId, session)} from ${fromLabel} to ${toLabel}?`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -136,7 +181,7 @@ export default function AddAttendanceScreen() {
   const changeDate = (days: number) => {
     const newDate = new Date(currentDate);
     newDate.setDate(newDate.getDate() + days);
-    const newDateStr = newDate.toISOString().split('T')[0];
+    const newDateStr = getLocalDateString(newDate);
     if (newDateStr > todayStr) {
       // Disallow navigating into the future
       return;
@@ -159,7 +204,7 @@ export default function AddAttendanceScreen() {
 
         <View style={styles.detailsColumn}>
           <Text style={styles.subjectText} numberOfLines={2}>
-            {getSubjectName(session.subjectId)}
+            {getSubjectName(session.subjectId, session)}
           </Text>
           <View style={styles.componentPill}>
             <Text style={styles.componentText}>
@@ -188,7 +233,7 @@ export default function AddAttendanceScreen() {
             ]}
             onPress={() => handleStatusSelect(session, 'present')}
             activeOpacity={0.7}
-            accessibilityLabel={`Mark Present for ${getSubjectName(session.subjectId)}`}
+            accessibilityLabel={`Mark Present for ${getSubjectName(session.subjectId, session)}`}
           >
             <Ionicons 
               name={status === 'present' ? "checkmark-circle" : "ellipse-outline"} 
@@ -207,7 +252,7 @@ export default function AddAttendanceScreen() {
             ]}
             onPress={() => handleStatusSelect(session, 'absent')}
             activeOpacity={0.7}
-            accessibilityLabel={`Mark Absent for ${getSubjectName(session.subjectId)}`}
+            accessibilityLabel={`Mark Absent for ${getSubjectName(session.subjectId, session)}`}
           >
             <Ionicons 
               name={status === 'absent' ? "close-circle" : "ellipse-outline"} 
@@ -274,17 +319,35 @@ export default function AddAttendanceScreen() {
           </View>
         </View>
 
-        {/* Holiday Banner if date is a holiday */}
-        {isDateHoliday && (
+        {/* Holiday Banner if date is a holiday, or button to mark as holiday */}
+        {isDateHoliday ? (
           <View style={styles.holidayBanner}>
-            <Ionicons name="sparkles" size={20} color={theme.colors.primary} style={{ marginRight: 10 }} />
+            <Ionicons name="sunny-outline" size={20} color={theme.colors.primary} style={{ marginRight: 10 }} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.holidayBannerTitle}>Holiday Marked</Text>
+              <Text style={styles.holidayBannerTitle}>Holiday Active</Text>
               <Text style={styles.holidayBannerText}>
-                Classes are suspended for this day. No attendance is required.
+                Classes suspended for this day. Tap Resume to mark attendance.
               </Text>
             </View>
+            <TouchableOpacity 
+              style={styles.unmarkHolidayBtn}
+              onPress={handleToggleHoliday}
+              accessibilityRole="button"
+              accessibilityLabel="Remove holiday"
+            >
+              <Text style={styles.unmarkHolidayBtnText}>Resume</Text>
+            </TouchableOpacity>
           </View>
+        ) : (
+          <TouchableOpacity 
+            style={styles.markHolidayBarBtn}
+            onPress={handleToggleHoliday}
+            accessibilityRole="button"
+            accessibilityLabel="Mark this date as holiday"
+          >
+            <Ionicons name="sunny-outline" size={15} color={theme.colors.primary} style={{ marginRight: 6 }} />
+            <Text style={styles.markHolidayBarBtnText}>Mark {isToday ? 'Today' : 'This Date'} as Holiday</Text>
+          </TouchableOpacity>
         )}
 
         {/* Section Header */}
@@ -454,6 +517,34 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontSize: 11,
     marginTop: 2,
+  },
+  unmarkHolidayBtn: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: theme.borderRadius.s,
+    marginLeft: 8,
+  },
+  unmarkHolidayBtnText: {
+    color: '#000',
+    fontSize: 12,
+    fontWeight: theme.typography.weights.bold,
+  },
+  markHolidayBarBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.l,
+    paddingVertical: 10,
+    marginBottom: theme.spacing.m,
+  },
+  markHolidayBarBtnText: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: theme.typography.weights.medium,
   },
   sectionHeader: {
     flexDirection: 'row',

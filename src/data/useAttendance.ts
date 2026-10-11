@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { AttendanceRecord, AttendanceSummary, BatchType, Subject, AppSettings, TimetableEntry } from '../types';
+import { AttendanceRecord, AttendanceSummary, Subject, AppSettings, TimetableEntry } from '../types';
 import { calculateAttendance, getApplicableSessions } from '../features/attendance/attendanceService';
 import { useTimetable } from './useTimetable';
 import { checkRiskAlerts } from '../features/notifications/notificationService';
@@ -21,11 +21,14 @@ import {
   addHoliday as dbAddHoliday,
   deleteHoliday as dbDeleteHoliday,
   getAttendanceBaselines,
+  saveAttendanceBaseline,
   getActiveSemester,
   getSemesters,
   setActiveSemester as dbSetActiveSemester,
   createSemester as dbCreateSemester
 } from '../db/repositories';
+import { getLocalDateString } from '../utils/dateUtils';
+import { formatSubjectDisplayName, isSubjectMatch } from '../utils/subjectUtils';
 
 export interface OverallAttendanceSummary {
   attended: number;
@@ -62,6 +65,16 @@ export interface AttendanceContextType {
     weight: number
   ) => Promise<void>;
   deleteRecord: (id: string) => Promise<void>;
+  saveBaseline: (
+    subjectId: string,
+    component: 'theory' | 'practical',
+    attended: number,
+    conducted: number
+  ) => Promise<void>;
+  getSubjectBaselines: (subjectId: string) => {
+    theory?: { attended: number; conducted: number };
+    practical?: { attended: number; conducted: number };
+  };
   getSubjectSummary: (subjectId: string, component: 'theory' | 'practical') => AttendanceSummary;
   getOverallSummary: () => OverallAttendanceSummary;
   getTodaySessions: (date: Date) => TimetableEntry[];
@@ -135,12 +148,17 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     weight: number
   ) => {
     // Validate future date rejection
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateString(new Date());
     if (date > todayStr) {
       throw new Error('Future attendance cannot be marked');
     }
 
     const now = new Date().toISOString();
+    const matchedSub = subjects.find(
+      s => s.id === subjectId || s.name.toLowerCase() === subjectId.toLowerCase()
+    );
+    const resolvedSubjectId = matchedSub ? matchedSub.id : subjectId;
+
     const existingIndex = records.findIndex(
       r => r.date === date && r.timetableEntryId === timetableEntryId
     );
@@ -150,6 +168,7 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
       const existing = records[existingIndex];
       const updatedItem: AttendanceRecord = {
         ...existing,
+        subjectId: resolvedSubjectId,
         status,
         weight,
         component,
@@ -162,7 +181,7 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     } else {
       const newRecord: AttendanceRecord = {
         id: uuidv4(),
-        subjectId,
+        subjectId: resolvedSubjectId,
         component,
         date,
         timetableEntryId,
@@ -183,9 +202,9 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     if (settings.notificationSettings?.riskAlertsEnabled && subjects.length > 0) {
       setTimeout(() => {
         const summaries = subjects.map(sub => ({
-          subjectName: sub.name,
+          subjectName: formatSubjectDisplayName({ subjectId: sub.id, subjects }),
           summary: calculateAttendance(
-            updatedRecords.filter(r => r.subjectId === sub.id),
+            updatedRecords.filter(r => isSubjectMatch(r.subjectId, sub.id, subjects)),
             settings.targetPercentage
           )
         }));
@@ -200,11 +219,46 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     triggerBackgroundSync();
   };
 
+  const saveBaseline = async (
+    subjectId: string,
+    component: 'theory' | 'practical',
+    attended: number,
+    conducted: number
+  ) => {
+    const matchedSub = subjects.find(
+      s => s.id === subjectId || s.name.toLowerCase() === subjectId.toLowerCase()
+    );
+    const resolvedSubjectId = matchedSub ? matchedSub.id : subjectId;
+
+    await saveAttendanceBaseline({
+      subjectId: resolvedSubjectId,
+      component,
+      attendedWeight: attended,
+      conductedWeight: conducted,
+    });
+    const [updatedBaselines, updatedSubjects] = await Promise.all([
+      getAttendanceBaselines(),
+      dbGetSubjects(),
+    ]);
+    setBaselines(updatedBaselines || []);
+    setSubjects(updatedSubjects || []);
+    triggerBackgroundSync();
+  };
+
+  const getSubjectBaselines = useCallback((subjectId: string) => {
+    const theory = baselines.find(b => isSubjectMatch(b.subjectId, subjectId, subjects) && b.component === 'theory');
+    const practical = baselines.find(b => isSubjectMatch(b.subjectId, subjectId, subjects) && b.component === 'practical');
+    return {
+      theory: theory ? { attended: theory.attendedWeight, conducted: theory.conductedWeight } : undefined,
+      practical: practical ? { attended: practical.attendedWeight, conducted: practical.conductedWeight } : undefined,
+    };
+  }, [baselines, subjects]);
+
   const getSubjectSummary = useCallback((subjectId: string, component: 'theory' | 'practical'): AttendanceSummary => {
-    const subjectRecords = records.filter(r => r.subjectId === subjectId && r.component === component);
-    const baseline = baselines.find(b => b.subjectId === subjectId && b.component === component);
+    const subjectRecords = records.filter(r => isSubjectMatch(r.subjectId, subjectId, subjects) && r.component === component);
+    const baseline = baselines.find(b => isSubjectMatch(b.subjectId, subjectId, subjects) && b.component === component);
     return calculateAttendance(subjectRecords, settings.targetPercentage, baseline);
-  }, [records, baselines, settings.targetPercentage]);
+  }, [records, baselines, subjects, settings.targetPercentage]);
 
   const getOverallSummary = useCallback((): OverallAttendanceSummary => {
     let totalAttended = 0;
@@ -247,17 +301,14 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
 
     // Check component-level risks for all subjects
     for (const sub of subjects) {
-      if (sub.hasTheory) {
-        const theorySummary = getSubjectSummary(sub.id, 'theory');
-        if (theorySummary.percentage !== null && !theorySummary.isAboveTarget) {
-          atRiskComponents.push(`${sub.name} (Theory: ${Math.round(theorySummary.percentage)}%)`);
-        }
+      const subName = formatSubjectDisplayName({ subjectId: sub.id, subjects });
+      const theorySummary = getSubjectSummary(sub.id, 'theory');
+      if (theorySummary.conductedWeight > 0 && theorySummary.percentage !== null && !theorySummary.isAboveTarget) {
+        atRiskComponents.push(`${subName} (Theory: ${Math.round(theorySummary.percentage)}%)`);
       }
-      if (sub.hasPractical) {
-        const practicalSummary = getSubjectSummary(sub.id, 'practical');
-        if (practicalSummary.percentage !== null && !practicalSummary.isAboveTarget) {
-          atRiskComponents.push(`${sub.name} (Practical: ${Math.round(practicalSummary.percentage)}%)`);
-        }
+      const practicalSummary = getSubjectSummary(sub.id, 'practical');
+      if (practicalSummary.conductedWeight > 0 && practicalSummary.percentage !== null && !practicalSummary.isAboveTarget) {
+        atRiskComponents.push(`${subName} (Practical: ${Math.round(practicalSummary.percentage)}%)`);
       }
     }
 
@@ -286,7 +337,7 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
   }, [holidays]);
 
   const getTodaySessions = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = getLocalDateString(date);
     const holidayActive = isHoliday(dateStr);
     return getApplicableSessions(date, timetable, settings.studentBatch, holidayActive);
   };
@@ -295,13 +346,13 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     return records.filter(r => r.date === date);
   };
 
-  const getSubjectRecords = (subjectId: string, componentFilter?: 'theory' | 'practical' | 'all') => {
-    let filtered = records.filter(r => r.subjectId === subjectId);
+  const getSubjectRecords = useCallback((subjectId: string, componentFilter?: 'theory' | 'practical' | 'all') => {
+    let filtered = records.filter(r => isSubjectMatch(r.subjectId, subjectId, subjects));
     if (componentFilter && componentFilter !== 'all') {
       filtered = filtered.filter(r => r.component === componentFilter);
     }
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  };
+  }, [records, subjects]);
 
   const markHoliday = async (date: string, name?: string) => {
     await dbAddHoliday(date, name);
@@ -363,6 +414,8 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     loadData,
     saveRecord,
     deleteRecord,
+    saveBaseline,
+    getSubjectBaselines,
     getSubjectSummary,
     getOverallSummary,
     getTodaySessions,
@@ -399,6 +452,8 @@ export const useAttendance = (): AttendanceContextType => {
       loadData: async () => {},
       saveRecord: async () => {},
       deleteRecord: async () => {},
+      saveBaseline: async () => {},
+      getSubjectBaselines: () => ({}),
       getSubjectSummary: () => ({ attendedWeight: 0, conductedWeight: 0, percentage: null, targetPercentage: 0.75, isAboveTarget: null }),
       getOverallSummary: () => ({
         attended: 0,
@@ -428,3 +483,4 @@ export const useAttendance = (): AttendanceContextType => {
   }
   return context;
 };
+

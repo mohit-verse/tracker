@@ -15,6 +15,8 @@ import {
   generateHabitsCSV,
 } from './src/features/backup/backupService';
 import { formatTo12hDisplay } from './src/utils/timeFormat';
+import { formatSubjectDisplayName, isUUID } from './src/utils/subjectUtils';
+import { getLocalDateString } from './src/utils/dateUtils';
 
 let passed = 0;
 let failed = 0;
@@ -470,6 +472,39 @@ const practicalSummary = calculateAttendance(mixedRecords.filter(r => r.componen
 
 assertEqual(100, theorySummary.percentage, 'Test 79: Theory attendance component is 100% (2/2)');
 assertEqual(50, practicalSummary.percentage, 'Test 80: Practical attendance component is 50% (1/2)');
+
+console.log('\n=== Milestone 15: Universal Subject Masking & Baseline Attendance Calculations ===');
+
+// Test 81: formatSubjectDisplayName ignores raw UUIDs
+assertEqual('Data Structures', formatSubjectDisplayName({ subjectId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479', name: 'Data Structures' }), 'Test 81: Displays friendly name when subjectId is UUID');
+assertEqual('Mathematics', formatSubjectDisplayName({ displayName: 'Mathematics', subjectId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' }), 'Test 82: Displays friendly displayName when present');
+assertEqual('Subject', formatSubjectDisplayName({ subjectId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479', displayName: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' }), 'Test 83: Masks raw UUID displayName to default fallback');
+assertEqual('Operating Systems', formatSubjectDisplayName({ subjectId: 'sub-1', subjects: [{ id: 'sub-1', name: 'Operating Systems' }] }), 'Test 84: Resolves subject name via subjects list');
+
+// Test 85: getLocalDateString formats YYYY-MM-DD
+const sampleDate = new Date(2026, 9, 12, 14, 30);
+assertEqual('2026-10-12', getLocalDateString(sampleDate), 'Test 85: getLocalDateString correctly outputs YYYY-MM-DD');
+
+// Test 86: Baseline Theory attendance combines with recorded future attendance
+const theoryBaseline = { attendedWeight: 10, conductedWeight: 12 };
+const futureTheoryRecords: AttendanceRecord[] = [
+  createRecord('ft1', 'present', 1, 'theory'),
+  createRecord('ft2', 'present', 1, 'theory'),
+];
+const calculatedTheory = calculateAttendance(futureTheoryRecords, 0.75, theoryBaseline);
+assertEqual(12, calculatedTheory.attendedWeight, 'Test 86: Theory attended weight is baseline + recorded (10 + 2 = 12)');
+assertEqual(14, calculatedTheory.conductedWeight, 'Test 86: Theory conducted weight is baseline + recorded (12 + 2 = 14)');
+assertTrue(Math.abs((calculatedTheory.percentage || 0) - (12 / 14 * 100)) < 0.01, 'Test 86: Theory combined percentage is ~85.7%');
+
+// Test 87: Baseline Practical attendance combines with recorded future attendance separately
+const practicalBaseline = { attendedWeight: 4, conductedWeight: 6 };
+const futurePracticalRecords: AttendanceRecord[] = [
+  createRecord('fp1', 'absent', 1, 'practical'),
+];
+const calculatedPractical = calculateAttendance(futurePracticalRecords, 0.75, practicalBaseline);
+assertEqual(4, calculatedPractical.attendedWeight, 'Test 87: Practical attended weight is baseline + recorded (4 + 0 = 4)');
+assertEqual(7, calculatedPractical.conductedWeight, 'Test 87: Practical conducted weight is baseline + recorded (6 + 1 = 7)');
+assertTrue(Math.abs((calculatedPractical.percentage || 0) - (4 / 7 * 100)) < 0.01, 'Test 87: Practical combined percentage is ~57.1%');
 
 console.log(`\nResults: ${passed} passed, ${failed} failed.`);
 if (failed > 0) process.exit(1);

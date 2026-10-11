@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme/theme';
 import { CircularProgress } from './CircularProgress';
 import { AttendanceSummary } from '../types';
+import { formatSubjectDisplayName } from '../utils/subjectUtils';
 
 interface SubjectAttendanceCardProps {
   name: string;
@@ -35,7 +36,7 @@ const ColumnSummary = ({
   summary?: AttendanceSummary | null;
   label: string;
 }) => {
-  const isEnabled = enabled;
+  const isEnabled = enabled || ((summary?.conductedWeight ?? 0) > 0);
   const hasData = isEnabled && summary !== null && summary !== undefined && summary.percentage !== null;
   const isSafe = hasData && summary!.isAboveTarget;
   
@@ -94,7 +95,13 @@ export const SubjectAttendanceCard: React.FC<SubjectAttendanceCardProps> = ({
   practicalSummary,
   onPress,
 }) => {
-  const iconName = getSubjectIcon(name);
+  const displayName = formatSubjectDisplayName({ name });
+  const iconName = getSubjectIcon(displayName);
+
+  const isTheoryActive = hasTheory || ((theorySummary?.conductedWeight ?? 0) > 0);
+  const isPracticalActive = hasPractical || ((practicalSummary?.conductedWeight ?? 0) > 0);
+  const showTheory = isTheoryActive || !isPracticalActive;
+  const showPractical = isPracticalActive;
 
   return (
     <TouchableOpacity 
@@ -108,7 +115,7 @@ export const SubjectAttendanceCard: React.FC<SubjectAttendanceCardProps> = ({
           <Ionicons name={iconName} size={18} color={theme.colors.primary} />
         </View>
         <Text style={styles.title} numberOfLines={1}>
-          {name}
+          {displayName}
         </Text>
         <View style={styles.chevronBox}>
           <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
@@ -117,7 +124,7 @@ export const SubjectAttendanceCard: React.FC<SubjectAttendanceCardProps> = ({
       
       <View style={styles.componentsWrapper}>
         <ColumnSummary 
-          enabled={hasTheory} 
+          enabled={showTheory} 
           summary={theorySummary} 
           label="Theory" 
         />
@@ -125,7 +132,7 @@ export const SubjectAttendanceCard: React.FC<SubjectAttendanceCardProps> = ({
         <View style={styles.divider} />
         
         <ColumnSummary 
-          enabled={hasPractical} 
+          enabled={showPractical} 
           summary={practicalSummary} 
           label="Practical" 
         />

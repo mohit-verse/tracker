@@ -34,6 +34,8 @@ BEGIN
   DELETE FROM public.habit_entries WHERE owner_id = v_user_id;
   DELETE FROM public.deleted_records WHERE owner_id = v_user_id;
   DELETE FROM public.holidays WHERE owner_id = v_user_id;
+  DELETE FROM public.attendance_baselines WHERE user_id = v_user_id;
+  DELETE FROM public.attendance_records WHERE user_id = v_user_id;
 
   -- Finally, delete the user from the Supabase auth schema.
   -- This removes their identity and revokes their active sessions.

@@ -7,11 +7,11 @@ import { useTimetable } from '../data/useTimetable';
 import { useAttendance } from '../data/useAttendance';
 import { TimetableEntry, BatchType } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { MOCK_SUBJECTS } from '../data/mock';
 import { reconcileDailyReminders } from '../features/notifications/notificationService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackgroundGlow } from '../components/BackgroundGlow';
 import { NativeTimePicker } from '../components/NativeTimePicker';
+import { formatSubjectDisplayName } from '../utils/subjectUtils';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -37,8 +37,13 @@ export default function AddTimetableScreen() {
       const entryId = Array.isArray(id) ? id[0] : id;
       const existing = timetable.find(e => e.id === entryId);
       if (existing) {
-        const foundSub = subjects.find(s => s.id === existing.subjectId);
-        setSubjectId(foundSub ? foundSub.name : existing.subjectId);
+        const initialName = formatSubjectDisplayName({
+          subjectId: existing.subjectId,
+          entryDisplayName: existing.displayName,
+          subjects,
+          fallback: '',
+        });
+        setSubjectId(initialName || existing.displayName || '');
         setDayOfWeek(existing.dayOfWeek);
         setStartTime(existing.startTime);
         setEndTime(existing.endTime);
@@ -124,7 +129,8 @@ export default function AddTimetableScreen() {
       component: finalComponent,
       isAttendanceBearing,
       weight: finalWeight,
-      batchConstraint
+      batchConstraint,
+      displayName: rawSubjectInput,
     };
 
     await saveEntry(entry);

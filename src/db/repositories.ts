@@ -2,6 +2,7 @@ import { getDatabase, withTransaction } from './index';
 import { AttendanceRecord, TimetableEntry, AppSettings, Subject } from '../types';
 import { enqueueOutboxOperation } from './outbox';
 import { v4 as uuidv4 } from 'uuid';
+import { formatSubjectDisplayName } from '../utils/subjectUtils';
 
 // Settings Repository
 export async function getSettings(): Promise<AppSettings | null> {
@@ -41,7 +42,7 @@ export async function getTimetable(): Promise<TimetableEntry[]> {
     isAttendanceBearing: r.is_attendance_bearing === 1,
     weight: r.weight,
     batchConstraint: r.batch_constraint || undefined,
-    displayName: r.display_name
+    displayName: formatSubjectDisplayName({ subjectId: r.subject_id, displayName: r.display_name })
   }));
 }
 
@@ -73,17 +74,26 @@ export async function saveTimetable(entries: TimetableEntry[]): Promise<void> {
 
     for (const entry of entries) {
       // Ensure subject exists for this entry
-      const existingSub = await tx.getFirstAsync(`SELECT id FROM subjects WHERE id = ?`, [entry.subjectId]);
+      let targetSubjectId = entry.subjectId;
+      let existingSub = await tx.getFirstAsync(`SELECT id, name FROM subjects WHERE id = ?`, [entry.subjectId]);
+      const cleanSubName = formatSubjectDisplayName({ subjectId: entry.subjectId, displayName: entry.displayName, name: existingSub?.name });
+      if (!existingSub) {
+        existingSub = await tx.getFirstAsync(`SELECT id, name FROM subjects WHERE LOWER(name) = LOWER(?)`, [cleanSubName]);
+        if (existingSub) {
+          targetSubjectId = existingSub.id;
+        }
+      }
+
       if (!existingSub) {
         await tx.runAsync(
           `INSERT INTO subjects (id, semester_id, name, has_theory, has_practical, created_at, updated_at) 
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [entry.subjectId, semesterId, entry.displayName || entry.subjectId, entry.component === 'theory' ? 1 : 0, entry.component === 'practical' ? 1 : 0, now, now]
+          [targetSubjectId, semesterId, cleanSubName, entry.component === 'theory' ? 1 : 0, entry.component === 'practical' ? 1 : 0, now, now]
         );
-        await enqueueOutboxOperation(tx, 'INSERT', 'subjects', entry.subjectId, {
-          id: entry.subjectId,
+        await enqueueOutboxOperation(tx, 'INSERT', 'subjects', targetSubjectId, {
+          id: targetSubjectId,
           semester_id: semesterId,
-          name: entry.displayName || entry.subjectId,
+          name: cleanSubName,
           has_theory: entry.component === 'theory',
           has_practical: entry.component === 'practical',
           created_at: now,
@@ -95,14 +105,14 @@ export async function saveTimetable(entries: TimetableEntry[]): Promise<void> {
         `INSERT INTO timetable_rules (id, semester_id, subject_id, day_of_week, start_time, end_time, component, is_attendance_bearing, weight, batch_constraint, created_at, updated_at) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          entry.id, semesterId, entry.subjectId, entry.dayOfWeek, entry.startTime, entry.endTime, 
+          entry.id, semesterId, targetSubjectId, entry.dayOfWeek, entry.startTime, entry.endTime, 
           entry.component, entry.isAttendanceBearing ? 1 : 0, entry.weight, entry.batchConstraint || null, now, now
         ]
       );
       await enqueueOutboxOperation(tx, 'INSERT', 'timetable_rules', entry.id, {
         id: entry.id,
         semester_id: semesterId,
-        subject_id: entry.subjectId,
+        subject_id: targetSubjectId,
         day_of_week: entry.dayOfWeek,
         start_time: entry.startTime,
         end_time: entry.endTime,
@@ -171,34 +181,50 @@ export async function addAttendanceRecord(record: AttendanceRecord): Promise<voi
     const endTime = rule ? rule.end_time : '01:00';
 
     // Ensure subject exists in SQLite and outbox
-    const existingSub = await tx.getFirstAsync(`SELECT id FROM subjects WHERE id = ?`, [record.subjectId]);
+    let canonicalSubjectId = record.subjectId;
+    let existingSub = await tx.getFirstAsync(`SELECT id, name, has_theory, has_practical FROM subjects WHERE id = ?`, [record.subjectId]);
+    const cleanSubName = formatSubjectDisplayName({ subjectId: record.subjectId, name: existingSub?.name });
+    if (!existingSub) {
+      existingSub = await tx.getFirstAsync(`SELECT id, name, has_theory, has_practical FROM subjects WHERE LOWER(name) = LOWER(?)`, [cleanSubName]);
+      if (existingSub) {
+        canonicalSubjectId = existingSub.id;
+      }
+    }
+
     if (!existingSub) {
       await tx.runAsync(
         `INSERT INTO subjects (id, semester_id, name, has_theory, has_practical, created_at, updated_at) 
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [record.subjectId, semesterId, record.subjectId, record.component === 'theory' ? 1 : 0, record.component === 'practical' ? 1 : 0, record.createdAt, record.createdAt]
+        [canonicalSubjectId, semesterId, cleanSubName, record.component === 'theory' ? 1 : 0, record.component === 'practical' ? 1 : 0, record.createdAt, record.createdAt]
       );
-      await enqueueOutboxOperation(tx, 'INSERT', 'subjects', record.subjectId, {
-        id: record.subjectId,
+      await enqueueOutboxOperation(tx, 'INSERT', 'subjects', canonicalSubjectId, {
+        id: canonicalSubjectId,
         semester_id: semesterId,
-        name: record.subjectId,
+        name: cleanSubName,
         has_theory: record.component === 'theory',
         has_practical: record.component === 'practical',
         created_at: record.createdAt,
         updated_at: record.createdAt
       });
+    } else {
+      // Ensure the marked component is enabled on the subject
+      if (record.component === 'theory' && existingSub.has_theory === 0) {
+        await tx.runAsync(`UPDATE subjects SET has_theory = 1, updated_at = ? WHERE id = ?`, [record.updatedAt, canonicalSubjectId]);
+      } else if (record.component === 'practical' && existingSub.has_practical === 0) {
+        await tx.runAsync(`UPDATE subjects SET has_practical = 1, updated_at = ? WHERE id = ?`, [record.updatedAt, canonicalSubjectId]);
+      }
     }
 
     // Insert and enqueue class_sessions
     await tx.runAsync(
       `INSERT INTO class_sessions (id, semester_id, subject_id, timetable_rule_id, date, start_time, end_time, component, weight, created_at, updated_at) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [sessionId, semesterId, record.subjectId, record.timetableEntryId, record.date, startTime, endTime, record.component, record.weight, record.createdAt, record.updatedAt]
+      [sessionId, semesterId, canonicalSubjectId, record.timetableEntryId, record.date, startTime, endTime, record.component, record.weight, record.createdAt, record.updatedAt]
     );
     await enqueueOutboxOperation(tx, 'INSERT', 'class_sessions', sessionId, {
       id: sessionId,
       semester_id: semesterId,
-      subject_id: record.subjectId,
+      subject_id: canonicalSubjectId,
       timetable_rule_id: record.timetableEntryId,
       date: record.date,
       start_time: startTime,
@@ -293,10 +319,11 @@ export async function restoreBackupData(
     // For timetable, we use stable IDs. If it exists, we update. If not, we insert.
     for (const entry of timetable) {
       // Ensure subject exists
+      const cleanSubName = formatSubjectDisplayName({ subjectId: entry.subjectId, displayName: entry.displayName });
       await tx.runAsync(
         `INSERT OR IGNORE INTO subjects (id, semester_id, name, has_theory, has_practical, created_at, updated_at) 
-         VALUES (?, ?, ?, 0, 0, ?, ?)`,
-        [entry.subjectId, semesterId, entry.displayName || entry.subjectId, now, now]
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [entry.subjectId, semesterId, cleanSubName, entry.component === 'practical' ? 0 : 1, entry.component === 'practical' ? 1 : 0, now, now]
       );
       
       const existingRule = await tx.getFirstAsync(`SELECT id FROM timetable_rules WHERE id = ?`, [entry.id]);
@@ -355,10 +382,11 @@ export async function restoreBackupData(
         const startTime = rule ? rule.startTime : '00:00';
         const endTime = rule ? rule.endTime : '01:00';
 
+        const recSubName = formatSubjectDisplayName({ subjectId: record.subjectId });
         await tx.runAsync(
           `INSERT OR IGNORE INTO subjects (id, semester_id, name, has_theory, has_practical, created_at, updated_at) 
-           VALUES (?, ?, ?, 0, 0, ?, ?)`,
-          [record.subjectId, semesterId, record.subjectId, now, now]
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [record.subjectId, semesterId, recSubName, record.component === 'practical' ? 0 : 1, record.component === 'practical' ? 1 : 0, now, now]
         );
 
         await tx.runAsync(
@@ -496,21 +524,38 @@ export async function getSubjects(semesterId?: string): Promise<Subject[]> {
   if (semesterId) {
     rows = await db.getAllAsync<any>(`SELECT * FROM subjects WHERE semester_id = ? ORDER BY name ASC`, [semesterId]);
   } else {
-    // Check active semester first
+    // Check active semester first - include NULL semester_id to prevent orphan drops
     const activeSem = await db.getFirstAsync<any>(`SELECT id FROM semesters WHERE is_active = 1`);
     if (activeSem?.id) {
-      rows = await db.getAllAsync<any>(`SELECT * FROM subjects WHERE semester_id = ? ORDER BY name ASC`, [activeSem.id]);
+      rows = await db.getAllAsync<any>(`SELECT * FROM subjects WHERE (semester_id = ? OR semester_id IS NULL) ORDER BY name ASC`, [activeSem.id]);
     } else {
       rows = await db.getAllAsync<any>(`SELECT * FROM subjects ORDER BY name ASC`);
     }
   }
 
-  return rows.map(r => ({
-    id: r.id,
-    name: r.name,
-    hasTheory: r.has_theory === 1,
-    hasPractical: r.has_practical === 1,
-  }));
+  // Deduplicate by clean subject display name
+  const deduplicated = new Map<string, Subject>();
+  for (const r of rows) {
+    const displayName = formatSubjectDisplayName({ subjectId: r.id, name: r.name });
+    const key = displayName.toLowerCase();
+    const hasTheory = r.has_theory === 1 || (r.has_theory === 0 && r.has_practical === 0);
+    const hasPractical = r.has_practical === 1;
+
+    if (deduplicated.has(key)) {
+      const existing = deduplicated.get(key)!;
+      existing.hasTheory = existing.hasTheory || hasTheory;
+      existing.hasPractical = existing.hasPractical || hasPractical;
+    } else {
+      deduplicated.set(key, {
+        id: r.id,
+        name: displayName,
+        hasTheory,
+        hasPractical,
+      });
+    }
+  }
+
+  return Array.from(deduplicated.values());
 }
 
 export async function getSubjectById(id: string): Promise<Subject | null> {
@@ -519,8 +564,8 @@ export async function getSubjectById(id: string): Promise<Subject | null> {
   if (!r) return null;
   return {
     id: r.id,
-    name: r.name,
-    hasTheory: r.has_theory === 1,
+    name: formatSubjectDisplayName({ subjectId: r.id, name: r.name }),
+    hasTheory: r.has_theory === 1 || (r.has_theory === 0 && r.has_practical === 0),
     hasPractical: r.has_practical === 1,
   };
 }
@@ -548,19 +593,23 @@ export async function saveSubject(subject: Subject): Promise<void> {
       });
     }
 
+    const cleanName = formatSubjectDisplayName({ subjectId: subject.id, name: subject.name });
+    const hasTheory = subject.hasTheory || (!subject.hasTheory && !subject.hasPractical);
+    const hasPractical = !!subject.hasPractical;
+
     await tx.runAsync(
       `INSERT INTO subjects (id, semester_id, name, has_theory, has_practical, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, has_theory = excluded.has_theory, has_practical = excluded.has_practical, updated_at = excluded.updated_at`,
-      [subject.id, semesterId, subject.name, subject.hasTheory ? 1 : 0, subject.hasPractical ? 1 : 0, now, now]
+      [subject.id, semesterId, cleanName, hasTheory ? 1 : 0, hasPractical ? 1 : 0, now, now]
     );
 
     await enqueueOutboxOperation(tx, 'INSERT', 'subjects', subject.id, {
       id: subject.id,
       semester_id: semesterId,
-      name: subject.name,
-      has_theory: subject.hasTheory,
-      has_practical: subject.hasPractical,
+      name: cleanName,
+      has_theory: hasTheory,
+      has_practical: hasPractical,
       created_at: now,
       updated_at: now
     });
@@ -661,8 +710,8 @@ export async function getAttendanceBaselines(subjectId?: string): Promise<any[]>
     id: r.id,
     subjectId: r.subject_id,
     component: r.component,
-    attendedWeight: r.attended_weight,
-    conductedWeight: r.conducted_weight,
+    attendedWeight: r.attended_weight ?? r.attended ?? 0,
+    conductedWeight: r.conducted_weight ?? r.conducted ?? 0,
   }));
 }
 
@@ -675,12 +724,43 @@ export async function saveAttendanceBaseline(baseline: {
   await withTransaction(async (tx: any) => {
     const now = new Date().toISOString();
     const id = uuidv4();
-    await tx.runAsync(
-      `INSERT INTO attendance_baselines (id, subject_id, component, attended_weight, conducted_weight, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(subject_id, component) DO UPDATE SET attended_weight = excluded.attended_weight, conducted_weight = excluded.conducted_weight, updated_at = excluded.updated_at`,
-      [id, baseline.subjectId, baseline.component, baseline.attendedWeight, baseline.conductedWeight, now, now]
-    );
+
+    // Ensure the subject has the corresponding component enabled in subjects table
+    if (baseline.component === 'theory') {
+      await tx.runAsync(`UPDATE subjects SET has_theory = 1, updated_at = ? WHERE id = ?`, [now, baseline.subjectId]);
+    } else if (baseline.component === 'practical') {
+      await tx.runAsync(`UPDATE subjects SET has_practical = 1, updated_at = ? WHERE id = ?`, [now, baseline.subjectId]);
+    }
+
+    try {
+      await tx.runAsync(
+        `INSERT INTO attendance_baselines (id, subject_id, component, attended_weight, conducted_weight, attended, conducted, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(subject_id, component) DO UPDATE SET 
+           attended_weight = excluded.attended_weight, 
+           conducted_weight = excluded.conducted_weight,
+           attended = excluded.attended,
+           conducted = excluded.conducted,
+           updated_at = excluded.updated_at`,
+        [id, baseline.subjectId, baseline.component, baseline.attendedWeight, baseline.conductedWeight, baseline.attendedWeight, baseline.conductedWeight, now, now]
+      );
+    } catch (err: any) {
+      if (err?.message?.includes('no column named attended')) {
+        // Fallback for tables without attended column
+        await tx.runAsync(
+          `INSERT INTO attendance_baselines (id, subject_id, component, attended_weight, conducted_weight, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(subject_id, component) DO UPDATE SET 
+             attended_weight = excluded.attended_weight, 
+             conducted_weight = excluded.conducted_weight,
+             updated_at = excluded.updated_at`,
+          [id, baseline.subjectId, baseline.component, baseline.attendedWeight, baseline.conductedWeight, now, now]
+        );
+      } else {
+        throw err;
+      }
+    }
+
     await enqueueOutboxOperation(tx, 'INSERT', 'attendance_baselines', id, {
       id,
       subject_id: baseline.subjectId,

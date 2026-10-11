@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
+import { ThemeProvider, DarkTheme } from 'expo-router/react-navigation';
 import { theme } from '../theme/theme';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, Text, Platform } from 'react-native';
@@ -89,8 +90,6 @@ function RootLayoutNav() {
     </Stack>
   );
 }
-
-import { ThemeProvider, DarkTheme } from '@react-navigation/native';
 
 const trackerNavTheme = {
   ...DarkTheme,

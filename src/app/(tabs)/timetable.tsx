@@ -10,6 +10,8 @@ import { LoadingState, ErrorState } from '../../components/UIStates';
 import { reconcileDailyReminders } from '../../features/notifications/notificationService';
 import { BackgroundGlow } from '../../components/BackgroundGlow';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getLocalDateString } from '../../utils/dateUtils';
+import { formatSubjectDisplayName } from '../../utils/subjectUtils';
 
 const DAYS_META = [
   { dayIndex: 1, label: 'Mon', full: 'Monday' },
@@ -63,7 +65,7 @@ export default function TimetableScreen() {
     DAYS_META.forEach((dm, offset) => {
       const d = new Date(monday);
       d.setDate(monday.getDate() + offset);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = getLocalDateString(d);
       dates[dm.dayIndex] = {
         dateStr,
         dayNum: d.getDate(),
@@ -74,7 +76,7 @@ export default function TimetableScreen() {
   }, [today]);
 
   const selectedDateInfo = weekDates[selectedDayIndex] || { 
-    dateStr: today.toISOString().split('T')[0], 
+    dateStr: getLocalDateString(today), 
     dayNum: today.getDate(), 
     isToday: true 
   };
@@ -105,16 +107,11 @@ export default function TimetableScreen() {
   }
 
   const getSubjectName = (id: string, displayName?: string) => {
-    if (displayName) return displayName;
-    if (id === 'sports') return 'Sports';
-    if (id === 'library') return 'Library';
-    const sub = subjects.find(s => s.id === id);
-    if (sub) return sub.name;
-    // Never expose an internal raw UUID as a user-facing subject label
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-      return 'Subject';
-    }
-    return id || 'Subject';
+    return formatSubjectDisplayName({
+      subjectId: id,
+      entryDisplayName: displayName,
+      subjects,
+    });
   };
 
   const handleEdit = (id: string) => {

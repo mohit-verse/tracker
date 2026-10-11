@@ -3,9 +3,11 @@ import {
   TimetableEntry,
   AppSettings,
   BackupDocument,
-  BackupData,
   ValidationResult,
+  Habit,
+  HabitEntry,
 } from '../../types';
+import { formatSubjectDisplayName } from '../../utils/subjectUtils';
 
 const CURRENT_SCHEMA_VERSION = 1;
 const APP_ID = 'tracker';
@@ -14,8 +16,6 @@ const APP_ID = 'tracker';
  * Creates a versioned backup document from current app state.
  * Does NOT modify any local data.
  */
-import { Habit, HabitEntry } from '../../types';
-
 export const createBackupDocument = (
   attendanceRecords: AttendanceRecord[],
   timetable: TimetableEntry[],
@@ -171,10 +171,9 @@ export function generateAttendanceCSV(
   records: AttendanceRecord[],
   subjects: { id: string; name: string }[] = []
 ): string {
-  const subjectMap = new Map(subjects.map(s => [s.id, s.name]));
   const headers = ['Date', 'Subject Name', 'Subject ID', 'Component', 'Status', 'Weight', 'Created At'];
   const rows = records.map(r => {
-    const rawName = subjectMap.get(r.subjectId) || r.subjectId;
+    const rawName = formatSubjectDisplayName({ subjectId: r.subjectId, subjects });
     const escapedName = `"${rawName.replace(/"/g, '""')}"`;
     return [
       r.date,

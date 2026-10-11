@@ -6,22 +6,25 @@ import { theme } from '../theme/theme';
 import { useTimetable } from '../data/useTimetable';
 import { useAttendance } from '../data/useAttendance';
 import { TimetableEntry } from '../types';
-import { MOCK_SUBJECTS } from '../data/mock';
 import { getApplicableSessions } from '../features/attendance/attendanceService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getLocalDateString } from '../utils/dateUtils';
+import { formatSubjectDisplayName } from '../utils/subjectUtils';
 
 export default function UpcomingScreen() {
   const { timetable, isLoaded: timetableLoaded } = useTimetable();
-  const { records, settings, isLoaded: attendanceLoaded } = useAttendance();
+  const { records, settings, subjects, isLoaded: attendanceLoaded } = useAttendance();
   const insets = useSafeAreaInsets();
 
   const now = new Date();
   // We mock time for testing if needed, but standard is `now`
   
-  const getSubjectName = (id: string) => {
-    if (id === 'sports') return 'Sports';
-    if (id === 'library') return 'Library';
-    return MOCK_SUBJECTS.find(s => s.id === id)?.name || id;
+  const getSubjectName = (id: string, entry?: any) => {
+    return formatSubjectDisplayName({
+      subjectId: id,
+      entryDisplayName: entry?.displayName || entry?.subjectName,
+      subjects,
+    });
   };
 
   const getRecordStatus = (date: string, entryId: string) => {
@@ -41,7 +44,7 @@ export default function UpcomingScreen() {
     return getApplicableSessions(tomorrow, timetable, settings.studentBatch);
   }, [timetable, settings.studentBatch, tomorrowDay]);
 
-  const todayDateString = now.toISOString().split('T')[0];
+  const todayDateString = getLocalDateString(now);
 
   // Find "Next Up"
   // Assuming startTime is "HH:mm", we can compare strings natively since it's 24h format
@@ -74,7 +77,7 @@ export default function UpcomingScreen() {
           <Text style={styles.sessionTimeMuted}>- {session.endTime}</Text>
         </View>
         <View style={styles.sessionDetails}>
-          <Text style={styles.sessionSubject} numberOfLines={2}>{getSubjectName(session.subjectId)}</Text>
+          <Text style={styles.sessionSubject} numberOfLines={2}>{getSubjectName(session.subjectId, session)}</Text>
           <View style={styles.badgeRow}>
             {session.component !== 'none' && (
               <Text style={styles.badgeText}>{session.component.toUpperCase()}</Text>
@@ -136,7 +139,7 @@ export default function UpcomingScreen() {
               )}
             </View>
             <Text style={styles.nextUpSubject} numberOfLines={2}>
-              {getSubjectName(nextUp.subjectId)}
+              {getSubjectName(nextUp.subjectId, nextUp)}
             </Text>
             <Text style={styles.nextUpComponent}>
               {nextUp.component !== 'none' ? nextUp.component.toUpperCase() : 'OTHER ACTIVITY'}
