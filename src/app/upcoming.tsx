@@ -28,16 +28,18 @@ export default function UpcomingScreen() {
     return records.find(r => r.date === date && r.timetableEntryId === entryId)?.status;
   };
 
+  const todayDay = now.getDay();
   const todaySessions = useMemo(() => {
     return getApplicableSessions(now, timetable, settings.studentBatch);
-  }, [timetable, settings.studentBatch, now.getDay()]);
+  }, [timetable, settings.studentBatch, todayDay]);
 
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowDay = tomorrow.getDay();
 
   const tomorrowSessions = useMemo(() => {
     return getApplicableSessions(tomorrow, timetable, settings.studentBatch);
-  }, [timetable, settings.studentBatch, tomorrow.getDay()]);
+  }, [timetable, settings.studentBatch, tomorrowDay]);
 
   const todayDateString = now.toISOString().split('T')[0];
 

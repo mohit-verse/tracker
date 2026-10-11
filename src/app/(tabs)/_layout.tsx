@@ -12,17 +12,12 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerStyle: {
-          backgroundColor: 'transparent',
-        },
-        headerTintColor: theme.colors.textPrimary,
-        headerTransparent: true,
-        headerTitleStyle: {
-          fontSize: theme.typography.sizes.xl,
-          fontWeight: theme.typography.weights.bold,
+        headerShown: false,
+        sceneStyle: {
+          backgroundColor: theme.colors.background,
         },
         tabBarStyle: {
-          backgroundColor: 'rgba(22, 25, 31, 0.85)',
+          backgroundColor: 'rgba(20, 20, 20, 0.95)',
           borderTopColor: theme.colors.border,
           borderTopWidth: 1,
           height: Platform.OS === 'ios' ? 85 : 65 + insets.bottom,
@@ -33,7 +28,6 @@ export default function TabLayout() {
         },
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.textSecondary,
-        headerShadowVisible: false,
       }}
     >
       <Tabs.Screen

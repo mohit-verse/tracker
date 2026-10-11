@@ -422,6 +422,45 @@ export async function getActiveSemester(): Promise<any | null> {
   return await db.getFirstAsync<any>(`SELECT * FROM semesters WHERE is_active = 1`);
 }
 
+export async function setActiveSemester(semesterId: string): Promise<void> {
+  const db = await getDatabase();
+  const now = new Date().toISOString();
+  await withTransaction(async (tx: any) => {
+    await tx.runAsync(`UPDATE semesters SET is_active = 0`);
+    await tx.runAsync(`UPDATE semesters SET is_active = 1, updated_at = ? WHERE id = ?`, [now, semesterId]);
+    await enqueueOutboxOperation(tx, 'UPDATE', 'semesters', semesterId, {
+      id: semesterId,
+      is_active: true,
+      updated_at: now
+    });
+  });
+}
+
+export async function createSemester(name: string, startDate: string, endDate?: string): Promise<string> {
+  const db = await getDatabase();
+  const id = uuidv4();
+  const now = new Date().toISOString();
+  const end = endDate || startDate;
+  await withTransaction(async (tx: any) => {
+    await tx.runAsync(`UPDATE semesters SET is_active = 0`);
+    await tx.runAsync(
+      `INSERT INTO semesters (id, name, start_date, end_date, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      [id, name, startDate, end, now, now]
+    );
+    await enqueueOutboxOperation(tx, 'INSERT', 'semesters', id, {
+      id,
+      name,
+      start_date: startDate,
+      end_date: end,
+      is_active: true,
+      created_at: now,
+      updated_at: now
+    });
+  });
+  return id;
+}
+
 export async function ensureActiveSemester(name = 'Semester 1'): Promise<string> {
   const db = await getDatabase();
   const existing = await db.getFirstAsync<any>(`SELECT id FROM semesters WHERE is_active = 1`);

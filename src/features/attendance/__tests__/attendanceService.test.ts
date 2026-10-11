@@ -1,6 +1,6 @@
-declare var describe: any;
-declare var it: any;
-declare var expect: any;
+declare const describe: any;
+declare const it: any;
+declare const expect: any;
 
 import {
   calculateAttendance,

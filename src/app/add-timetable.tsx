@@ -11,6 +11,7 @@ import { MOCK_SUBJECTS } from '../data/mock';
 import { reconcileDailyReminders } from '../features/notifications/notificationService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackgroundGlow } from '../components/BackgroundGlow';
+import { NativeTimePicker } from '../components/NativeTimePicker';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -205,38 +206,20 @@ export default function AddTimetableScreen() {
         {/* Time */}
         <View style={styles.rowLayout}>
           <View style={{ flex: 1, marginRight: 8 }}>
-            <Text style={styles.label}>Start Time</Text>
-            <View style={styles.inputCard}>
-              <View style={styles.inputIconBox}>
-                <Ionicons name="time-outline" size={16} color={theme.colors.textSecondary} />
-              </View>
-              <TextInput 
-                style={styles.inputText}
-                value={startTime}
-                onChangeText={setStartTime}
-                keyboardType="numeric"
-                maxLength={5}
-                placeholder="10:00"
-                placeholderTextColor={theme.colors.textMuted}
-              />
-            </View>
+            <NativeTimePicker
+              label="Start Time"
+              value={startTime}
+              onChange={setStartTime}
+              icon="time-outline"
+            />
           </View>
           <View style={{ flex: 1, marginLeft: 8 }}>
-            <Text style={styles.label}>End Time</Text>
-            <View style={styles.inputCard}>
-              <View style={styles.inputIconBox}>
-                <Ionicons name="time-outline" size={16} color={theme.colors.textSecondary} />
-              </View>
-              <TextInput 
-                style={styles.inputText}
-                value={endTime}
-                onChangeText={setEndTime}
-                keyboardType="numeric"
-                maxLength={5}
-                placeholder="11:00"
-                placeholderTextColor={theme.colors.textMuted}
-              />
-            </View>
+            <NativeTimePicker
+              label="End Time"
+              value={endTime}
+              onChange={setEndTime}
+              icon="time-outline"
+            />
           </View>
         </View>
 

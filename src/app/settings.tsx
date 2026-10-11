@@ -1,15 +1,22 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch, TextInput, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
+import { router } from 'expo-router';
 import { theme } from '../theme/theme';
 import { useAttendance } from '../data/useAttendance';
 import { useTimetable } from '../data/useTimetable';
-import { exportAndShareBackup, pickBackupFile, restoreFromBackup } from '../features/backup/backupIO';
+import { 
+  exportAndShareBackup, 
+  pickBackupFile, 
+  restoreFromBackup, 
+  exportAndShareCSV, 
+  shareBackupToGoogleDrive 
+} from '../features/backup/backupIO';
 import { validateBackupDocument } from '../features/backup/backupService';
 import { BackupDocument } from '../types';
 import { requestNotificationPermissions, reconcileDailyReminders } from '../features/notifications/notificationService';
 import { BackgroundGlow } from '../components/BackgroundGlow';
+import { NativeTimePicker } from '../components/NativeTimePicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function SettingsScreen() {
@@ -17,9 +24,9 @@ export default function SettingsScreen() {
   const { timetable, loadTimetable } = useTimetable();
   const insets = useSafeAreaInsets();
   
-  const [timeInput, setTimeInput] = useState(settings?.notificationSettings?.reminderTime || '18:00');
+  const [reminderTime, setReminderTime] = useState(settings?.notificationSettings?.reminderTime || '18:00');
   
-  let notificationsAvailable = Platform.OS !== 'web';
+  const notificationsAvailable = Platform.OS !== 'web';
 
   const toggleDailyReminder = async (val: boolean) => {
     if (val) {
@@ -33,7 +40,7 @@ export default function SettingsScreen() {
     const newConfig = {
       ...settings?.notificationSettings,
       dailyReminderEnabled: val,
-      reminderTime: timeInput,
+      reminderTime: reminderTime,
       riskAlertsEnabled: settings?.notificationSettings?.riskAlertsEnabled || false,
     };
     
@@ -53,38 +60,57 @@ export default function SettingsScreen() {
     const newConfig = {
       ...settings?.notificationSettings,
       dailyReminderEnabled: settings?.notificationSettings?.dailyReminderEnabled || false,
-      reminderTime: timeInput,
+      reminderTime: reminderTime,
       riskAlertsEnabled: val,
     };
     
     await updateSettings({ notificationSettings: newConfig });
   };
 
-  const updateTime = async () => {
-    if (!/^\d{2}:\d{2}$/.test(timeInput)) {
-      Alert.alert('Invalid format', 'Please use HH:mm format (e.g. 18:00)');
-      return;
-    }
-    
+  const handleReminderTimeChange = async (newTime: string) => {
+    setReminderTime(newTime);
     const newConfig = {
       ...settings?.notificationSettings,
       dailyReminderEnabled: settings?.notificationSettings?.dailyReminderEnabled || false,
-      reminderTime: timeInput,
+      reminderTime: newTime,
       riskAlertsEnabled: settings?.notificationSettings?.riskAlertsEnabled || false,
     };
     
     await updateSettings({ notificationSettings: newConfig });
     if (newConfig.dailyReminderEnabled) {
       await reconcileDailyReminders(timetable, settings.studentBatch, newConfig);
-      Alert.alert('Success', 'Reminder time updated');
     }
   };
 
-  const handleExport = async () => {
+  const handleExportJSON = async () => {
     try {
       await exportAndShareBackup();
     } catch (error: any) {
       Alert.alert('Export Failed', error.message || 'An error occurred during export.');
+    }
+  };
+
+  const handleExportAttendanceCSV = async () => {
+    try {
+      await exportAndShareCSV('attendance');
+    } catch (error: any) {
+      Alert.alert('CSV Export Failed', error.message || 'An error occurred exporting attendance CSV.');
+    }
+  };
+
+  const handleExportHabitsCSV = async () => {
+    try {
+      await exportAndShareCSV('habits');
+    } catch (error: any) {
+      Alert.alert('CSV Export Failed', error.message || 'An error occurred exporting habits CSV.');
+    }
+  };
+
+  const handleDriveBackup = async () => {
+    try {
+      await shareBackupToGoogleDrive();
+    } catch (error: any) {
+      Alert.alert('Drive Backup Failed', error.message || 'An error occurred exporting to Google Drive.');
     }
   };
 
@@ -103,7 +129,7 @@ export default function SettingsScreen() {
 
       Alert.alert(
         'Restore Backup',
-        'Restore will replace the current local Tracker data with the selected backup. This action is destructive.',
+        'Restore will replace the current local Tracker data with the selected backup. A safety backup will be created first.',
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -127,9 +153,6 @@ export default function SettingsScreen() {
       Alert.alert('Error', 'Could not read backup file.');
     }
   };
-
-  const handleDriveBackup = () => Alert.alert("Drive Sync", "Initiating Google Drive backup sync...");
-  const handleDriveRestore = () => Alert.alert("Drive Sync", "Initiating Google Drive restore...");
 
   const handleReset = () => {
     Alert.alert(
@@ -191,15 +214,25 @@ export default function SettingsScreen() {
       <BackgroundGlow />
       
       {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 60 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => router.back()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
+          <Ionicons name="arrow-back" size={24} color={theme.colors.textPrimary} />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
-        <Text style={styles.headerSubtitle}>Account, notifications, data</Text>
+        <Text style={styles.headerSubtitle}>Account, notifications, and data management</Text>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]}>
         
         {/* Notifications */}
         <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Reminders & Alerts</Text>
           <View style={styles.card}>
             <SettingRow 
               icon="notifications-outline" 
@@ -215,29 +248,18 @@ export default function SettingsScreen() {
               }
             />
             {settings?.notificationSettings?.dailyReminderEnabled && (
-              <SettingRow 
-                icon="time-outline" 
-                title="Reminder Time" 
-                subtitle="24-hour format (HH:mm)"
-                rightElement={
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <TextInput 
-                      style={styles.timeInput}
-                      value={timeInput}
-                      onChangeText={setTimeInput}
-                      placeholder="18:00"
-                      placeholderTextColor={theme.colors.textMuted}
-                      keyboardType="numbers-and-punctuation"
-                      onBlur={updateTime}
-                    />
-                  </View>
-                }
-              />
+              <View style={styles.pickerRow}>
+                <NativeTimePicker
+                  label="Daily Reminder Time"
+                  value={reminderTime}
+                  onChange={handleReminderTimeChange}
+                />
+              </View>
             )}
             <SettingRow 
               icon="warning-outline" 
               title="Risk Alerts" 
-              subtitle={`Notify when dropping below ${Math.round(settings.targetPercentage * 100)}%`}
+              subtitle={`Notify when attendance drops below ${Math.round((settings.targetPercentage || 0.75) * 100)}%`}
               noBorder
               rightElement={
                 <Switch 
@@ -249,30 +271,64 @@ export default function SettingsScreen() {
               }
             />
           </View>
-          {notificationsAvailable === false && (
-            <Text style={styles.noteText}>Note: Notifications require a native build.</Text>
+          {!notificationsAvailable && (
+            <Text style={styles.noteText}>Note: Notifications require a native build (Expo Go SDK 53+ restriction).</Text>
           )}
         </View>
 
         {/* Data & Backup */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Data & Backup</Text>
+          <Text style={styles.sectionLabel}>Data & Backups</Text>
           <View style={styles.card}>
-            <SettingRow icon="download-outline" title="Export Backup" subtitle="Save your data locally as JSON" onPress={handleExport} />
-            <SettingRow icon="folder-open-outline" title="Import Backup" subtitle="Restore from a JSON backup file" onPress={handleImport} noBorder />
+            <SettingRow 
+              icon="download-outline" 
+              title="Export Backup (JSON)" 
+              subtitle="Full system snapshot for migration or recovery" 
+              onPress={handleExportJSON} 
+            />
+            <SettingRow 
+              icon="folder-open-outline" 
+              title="Import Backup (JSON)" 
+              subtitle="Restore from a previously exported backup file" 
+              onPress={handleImport} 
+            />
+            <SettingRow 
+              icon="document-text-outline" 
+              title="Export Attendance CSV" 
+              subtitle="Spreadsheet export of attendance log and percentages" 
+              onPress={handleExportAttendanceCSV} 
+            />
+            <SettingRow 
+              icon="calendar-outline" 
+              title="Export Habits CSV" 
+              subtitle="Spreadsheet export of habit tracking history" 
+              onPress={handleExportHabitsCSV} 
+              noBorder 
+            />
           </View>
         </View>
 
-        {/* Google Drive Backup */}
+        {/* Google Drive / Cloud Storage */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Google Drive Backup</Text>
+          <Text style={styles.sectionLabel}>Cloud Storage</Text>
           <View style={styles.card}>
-            <SettingRow icon="cloud-upload-outline" title="Back up to Google Drive" onPress={handleDriveBackup} />
-            <SettingRow icon="cloud-download-outline" title="Restore from Google Drive" onPress={handleDriveRestore} noBorder />
+            <SettingRow 
+              icon="cloud-upload-outline" 
+              title="Save to Google Drive / Files" 
+              subtitle="Export JSON backup to Google Drive or cloud drive" 
+              onPress={handleDriveBackup} 
+            />
+            <SettingRow 
+              icon="cloud-download-outline" 
+              title="Restore from Drive / Files" 
+              subtitle="Pick a JSON backup document from cloud storage" 
+              onPress={handleImport} 
+              noBorder 
+            />
           </View>
         </View>
 
-        {/* Recovery */}
+        {/* Recovery & Reset */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Recovery</Text>
           <View style={styles.card}>
@@ -282,19 +338,19 @@ export default function SettingsScreen() {
               </View>
               <View style={styles.rowContent}>
                 <Text style={styles.resetTitle}>Reset Local Data</Text>
-                <Text style={styles.rowSubtitle}>Clear all local storage</Text>
+                <Text style={styles.rowSubtitle}>Clear local SQLite records with safety snapshot</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={theme.colors.danger} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Privacy & About */}
+        {/* About */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>About</Text>
           <View style={styles.card}>
-            <SettingRow icon="lock-closed-outline" title="Privacy" subtitle="All data is stored locally" />
-            <SettingRow icon="information-circle-outline" title="Version" subtitle="1.0.0" noBorder />
+            <SettingRow icon="lock-closed-outline" title="Privacy" subtitle="Local-first database with optional cloud sync" />
+            <SettingRow icon="information-circle-outline" title="Version" subtitle="1.0.0 (Phase 11 Stable)" noBorder />
           </View>
         </View>
 
@@ -306,11 +362,22 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: theme.colors.background,
   },
   header: {
-    marginBottom: theme.spacing.xl,
+    marginBottom: theme.spacing.m,
     paddingHorizontal: theme.spacing.m,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: theme.spacing.s,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   headerTitle: {
     color: theme.colors.textPrimary,
@@ -356,6 +423,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
+  pickerRow: {
+    paddingHorizontal: theme.spacing.m,
+    paddingVertical: theme.spacing.s,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+  },
   rowIconBox: {
     width: 40,
     height: 40,
@@ -389,18 +463,6 @@ const styles = StyleSheet.create({
     color: theme.colors.danger,
     fontSize: 16,
     fontWeight: theme.typography.weights.bold,
-  },
-  timeInput: {
-    backgroundColor: theme.colors.surface,
-    color: theme.colors.textPrimary,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.s,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    width: 70,
-    textAlign: 'center',
-    fontSize: 16,
   },
   noteText: {
     color: theme.colors.textMuted,

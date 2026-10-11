@@ -104,11 +104,17 @@ export default function TimetableScreen() {
     );
   }
 
-  const getSubjectName = (id: string) => {
+  const getSubjectName = (id: string, displayName?: string) => {
+    if (displayName) return displayName;
     if (id === 'sports') return 'Sports';
     if (id === 'library') return 'Library';
     const sub = subjects.find(s => s.id === id);
-    return sub ? sub.name : id;
+    if (sub) return sub.name;
+    // Never expose an internal raw UUID as a user-facing subject label
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      return 'Subject';
+    }
+    return id || 'Subject';
   };
 
   const handleEdit = (id: string) => {
@@ -300,7 +306,7 @@ export default function TimetableScreen() {
 
                 <View style={styles.detailsColumn}>
                   <Text style={styles.subjectText} numberOfLines={2}>
-                    {getSubjectName(item.subjectId)}
+                    {getSubjectName(item.subjectId, item.displayName)}
                   </Text>
                   <View style={styles.componentPill}>
                     <Text style={styles.componentText}>
@@ -356,7 +362,7 @@ export default function TimetableScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: theme.colors.background,
   },
   scrollContent: {
     paddingHorizontal: theme.spacing.m,

@@ -77,7 +77,12 @@ export async function processOutbox(): Promise<void> {
 
           if (!row) {
             // The row was deleted locally before pushing. 
-            const tombstonePayload = { id: op.entity_id, table_name: op.entity_type };
+            const tombstonePayload = { 
+              id: op.entity_id, 
+              table_name: op.entity_type,
+              user_id: session.user.id,
+              deleted_at: new Date().toISOString()
+            };
             const { error: tombstoneError } = await supabase.rpc('sync_upsert', {
               p_table_name: 'deleted_records',
               p_payload: tombstonePayload
@@ -90,6 +95,9 @@ export async function processOutbox(): Promise<void> {
             success = true; 
           } else {
             const cleanRow = cleanPayloadForSupabase(op.entity_type, row);
+            if (session?.user?.id) {
+              cleanRow.user_id = session.user.id;
+            }
             const { data, error } = await supabase.rpc('sync_upsert', {
               p_table_name: op.entity_type,
               p_payload: cleanRow

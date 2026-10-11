@@ -8,7 +8,13 @@ import {
 } from './src/features/attendance/attendanceService';
 import { AttendanceRecord, TimetableEntry } from './src/types';
 import { isDayEligibleForReminder } from './src/features/notifications/notificationDomain';
-import { createBackupDocument, validateBackupDocument } from './src/features/backup/backupService';
+import { 
+  createBackupDocument, 
+  validateBackupDocument,
+  generateAttendanceCSV,
+  generateHabitsCSV,
+} from './src/features/backup/backupService';
+import { formatTo12hDisplay } from './src/utils/timeFormat';
 
 let passed = 0;
 let failed = 0;
@@ -384,6 +390,88 @@ assertEqual(true, validateTimetableSlotInput({ subjectId: 'sub-1', startTime: '1
 assertEqual(false, validateTimetableSlotInput({ subjectId: '', startTime: '10:00', endTime: '11:00', weight: 1 }).valid, 'Test 65: Missing subjectId rejected');
 assertEqual(false, validateTimetableSlotInput({ subjectId: 'sub-1', startTime: '11:00', endTime: '10:00', weight: 1 }).valid, 'Test 66: Inverted times rejected');
 
+console.log('\n=== Milestone 13: Time Picker & CSV Export Formatting ===');
+
+// Test 67-71: formatTo12hDisplay
+assertEqual('9:00 AM', formatTo12hDisplay('09:00'), 'Test 67: 09:00 -> 9:00 AM');
+assertEqual('6:30 PM', formatTo12hDisplay('18:30'), 'Test 68: 18:30 -> 6:30 PM');
+assertEqual('12:15 AM', formatTo12hDisplay('00:15'), 'Test 69: 00:15 -> 12:15 AM');
+assertEqual('12:00 PM', formatTo12hDisplay('12:00'), 'Test 70: 12:00 -> 12:00 PM');
+assertEqual('--:--', formatTo12hDisplay(''), 'Test 71: Empty string -> --:--');
+
+// Test 72-73: generateAttendanceCSV
+const testRecordCSV1: AttendanceRecord = {
+  id: 'rec_1',
+  subjectId: 'sub_math',
+  component: 'theory',
+  date: '2023-10-15',
+  timetableEntryId: 'tt_1',
+  status: 'present',
+  weight: 1,
+  createdAt: '2023-10-15T10:00:00Z',
+  updatedAt: '2023-10-15T10:00:00Z',
+};
+const testSubjectCSV = [{ id: 'sub_math', name: 'Mathematics, "Advanced"' }];
+const attendanceCsvOutput = generateAttendanceCSV([testRecordCSV1], testSubjectCSV);
+assertTrue(attendanceCsvOutput.startsWith('Date,Subject Name,Subject ID,Component,Status,Weight,Created At'), 'Test 72: Attendance CSV contains expected header line');
+assertTrue(attendanceCsvOutput.includes('"Mathematics, ""Advanced"""'), 'Test 73: Attendance CSV properly escapes embedded quotes and commas');
+
+// Test 74-75: generateHabitsCSV
+const testHabit = {
+  id: 'h_1',
+  name: 'Morning "Workout"',
+  description: 'Exercise',
+  frequency_type: 'daily' as const,
+  target_count: 1,
+  start_date: '2023-10-01',
+  reminder_enabled: false,
+  created_at: '2023-10-01',
+  updated_at: '2023-10-01',
+};
+const testHabitEntry = {
+  id: 'he_1',
+  habit_id: 'h_1',
+  date: '2023-10-15',
+  count: 1,
+  created_at: '2023-10-15T08:00:00Z',
+  updated_at: '2023-10-15T08:00:00Z',
+};
+const habitCsvOutput = generateHabitsCSV([testHabit], [testHabitEntry]);
+assertTrue(habitCsvOutput.startsWith('Date,Habit Name,Habit ID,Count,Logged At'), 'Test 74: Habits CSV contains expected header line');
+assertTrue(habitCsvOutput.includes('"Morning ""Workout"""'), 'Test 75: Habits CSV properly escapes embedded quotes');
+
+console.log('\n=== Milestone 14: Timetable Subject Resolution & Component Analytics ===');
+
+// Test 76-78: Subject UUID fallback resolution logic
+const resolveDisplayName = (item: { displayName?: string; subjectId: string }, subjectsList: { id: string; name: string }[]) => {
+  if (item.displayName && item.displayName.trim().length > 0) return item.displayName;
+  const match = subjectsList.find(s => s.id === item.subjectId);
+  if (match?.name) return match.name;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.subjectId)) {
+    return 'Subject';
+  }
+  return item.subjectId || 'Subject';
+};
+
+assertEqual('Computer Science', resolveDisplayName({ displayName: 'Computer Science', subjectId: '123' }, []), 'Test 76: Uses joined displayName when available');
+assertEqual('Physics', resolveDisplayName({ subjectId: 'sub_phy' }, [{ id: 'sub_phy', name: 'Physics' }]), 'Test 77: Resolves via subjects map when joined displayName is missing');
+assertEqual('Subject', resolveDisplayName({ subjectId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' }, []), 'Test 78: Guards against leaking raw UUID fallback');
+
+// Test 79-80: Separate Theory & Practical summary calculation
+const mixedRecords: AttendanceRecord[] = [
+  createRecord('m1', 'present', 1, 'theory'),
+  createRecord('m2', 'present', 1, 'theory'),
+  createRecord('m3', 'present', 1, 'practical'),
+  createRecord('m4', 'absent', 1, 'practical'),
+];
+
+const theorySummary = calculateAttendance(mixedRecords.filter(r => r.component === 'theory'), 0.75);
+const practicalSummary = calculateAttendance(mixedRecords.filter(r => r.component === 'practical'), 0.75);
+
+assertEqual(100, theorySummary.percentage, 'Test 79: Theory attendance component is 100% (2/2)');
+assertEqual(50, practicalSummary.percentage, 'Test 80: Practical attendance component is 50% (1/2)');
+
 console.log(`\nResults: ${passed} passed, ${failed} failed.`);
 if (failed > 0) process.exit(1);
+
 

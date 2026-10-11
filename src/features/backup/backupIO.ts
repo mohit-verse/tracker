@@ -12,11 +12,24 @@ import {
   Habit,
   HabitEntry,
 } from '../../types';
-import { createBackupDocument, validateBackupDocument } from './backupService';
-
+import { 
+  createBackupDocument, 
+  validateBackupDocument,
+  generateAttendanceCSV,
+  generateHabitsCSV 
+} from './backupService';
 import { getHabits, getHabitEntriesByHabit } from '../../db/habitRepositories';
+import { getSubjects } from '../../db/repositories';
 
 const SAFETY_SNAPSHOT_KEY = '@tracker_safety_snapshot';
+
+function getBackupDirectory(): string {
+  const legacyDir = (FileSystem as any).documentDirectory || (FileSystem as any).cacheDirectory;
+  if (legacyDir) return legacyDir.endsWith('/') ? legacyDir : `${legacyDir}/`;
+  const modernUri = (FileSystem as any).Paths?.document?.uri || (FileSystem as any).Paths?.cache?.uri || '';
+  if (modernUri) return modernUri.endsWith('/') ? modernUri : `${modernUri}/`;
+  return '';
+}
 
 /**
  * Reads all current local data and returns a BackupDocument.
@@ -46,10 +59,11 @@ export const exportAndShareBackup = async (): Promise<void> => {
   const backup = await exportBackup();
   const json = JSON.stringify(backup, null, 2);
   const fileName = `tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  const filePath = `${FileSystem.Paths.document.uri}${fileName}`;
+  const dir = getBackupDirectory();
+  const filePath = `${dir}${fileName}`;
 
   await FileSystem.writeAsStringAsync(filePath, json, {
-    encoding: FileSystem.EncodingType.UTF8,
+    encoding: (FileSystem as any).EncodingType?.UTF8 || 'utf8',
   });
 
   const canShare = await Sharing.isAvailableAsync();
@@ -60,6 +74,72 @@ export const exportAndShareBackup = async (): Promise<void> => {
     });
   } else {
     throw new Error('Sharing is not available on this device.');
+  }
+};
+
+/**
+ * Exports attendance or habit history as spreadsheet-friendly CSV.
+ */
+export const exportAndShareCSV = async (type: 'attendance' | 'habits'): Promise<void> => {
+  const dir = getBackupDirectory();
+  const dateTag = new Date().toISOString().slice(0, 10);
+  let csvContent = '';
+  let fileName = '';
+
+  if (type === 'attendance') {
+    const records = await getAttendanceRecords() || [];
+    const subjects = await getSubjects() || [];
+    csvContent = generateAttendanceCSV(records, subjects);
+    fileName = `tracker-attendance-${dateTag}.csv`;
+  } else {
+    const habits = await getHabits() || [];
+    let habitEntries: HabitEntry[] = [];
+    for (const h of habits) {
+      const entries = await getHabitEntriesByHabit(h.id);
+      habitEntries = habitEntries.concat(entries);
+    }
+    csvContent = generateHabitsCSV(habits, habitEntries);
+    fileName = `tracker-habits-${dateTag}.csv`;
+  }
+
+  const filePath = `${dir}${fileName}`;
+  await FileSystem.writeAsStringAsync(filePath, csvContent, {
+    encoding: (FileSystem as any).EncodingType?.UTF8 || 'utf8',
+  });
+
+  const canShare = await Sharing.isAvailableAsync();
+  if (canShare) {
+    await Sharing.shareAsync(filePath, {
+      mimeType: 'text/csv',
+      dialogTitle: `Export ${type === 'attendance' ? 'Attendance' : 'Habits'} CSV`,
+    });
+  } else {
+    throw new Error('Sharing is not available on this device.');
+  }
+};
+
+/**
+ * Saves or uploads backup JSON targeting Google Drive / Cloud Storage.
+ */
+export const shareBackupToGoogleDrive = async (): Promise<void> => {
+  const backup = await exportBackup();
+  const json = JSON.stringify(backup, null, 2);
+  const fileName = `tracker-gdrive-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  const dir = getBackupDirectory();
+  const filePath = `${dir}${fileName}`;
+
+  await FileSystem.writeAsStringAsync(filePath, json, {
+    encoding: (FileSystem as any).EncodingType?.UTF8 || 'utf8',
+  });
+
+  const canShare = await Sharing.isAvailableAsync();
+  if (canShare) {
+    await Sharing.shareAsync(filePath, {
+      mimeType: 'application/json',
+      dialogTitle: 'Save to Google Drive or Cloud Storage',
+    });
+  } else {
+    throw new Error('Cloud storage sharing is not available on this device.');
   }
 };
 

@@ -20,7 +20,11 @@ import {
   getHolidays as dbGetHolidays,
   addHoliday as dbAddHoliday,
   deleteHoliday as dbDeleteHoliday,
-  getAttendanceBaselines
+  getAttendanceBaselines,
+  getActiveSemester,
+  getSemesters,
+  setActiveSemester as dbSetActiveSemester,
+  createSemester as dbCreateSemester
 } from '../db/repositories';
 
 export interface OverallAttendanceSummary {
@@ -28,6 +32,12 @@ export interface OverallAttendanceSummary {
   conducted: number;
   percentage: number | null;
   isAboveTarget: boolean | null;
+  theoryAttended: number;
+  theoryConducted: number;
+  theoryPercentage: number | null;
+  practicalAttended: number;
+  practicalConducted: number;
+  practicalPercentage: number | null;
   atRiskComponents: string[];
 }
 
@@ -38,6 +48,8 @@ export interface AttendanceContextType {
   baselines: any[];
   settings: AppSettings;
   timetable: TimetableEntry[];
+  activeSemester: { id: string; name: string; start_date: string; end_date?: string } | null;
+  semesters: any[];
   isLoaded: boolean;
   error: string | null;
   loadData: () => Promise<void>;
@@ -61,6 +73,8 @@ export interface AttendanceContextType {
   saveSubject: (subject: Subject) => Promise<void>;
   deleteSubject: (subjectId: string) => Promise<void>;
   updateSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
+  switchSemester: (semesterId: string) => Promise<void>;
+  createNewSemester: (name: string, startDate: string, endDate?: string) => Promise<void>;
 }
 
 const AttendanceContext = createContext<AttendanceContextType | null>(null);
@@ -71,6 +85,8 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
   const [holidays, setHolidays] = useState<{ id: string; date: string; name?: string }[]>([]);
   const [baselines, setBaselines] = useState<any[]>([]);
   const [settings, setSettings] = useState<AppSettings>({ studentBatch: 'Batch I', targetPercentage: 0.75 });
+  const [activeSemester, setActiveSemesterState] = useState<{ id: string; name: string; start_date: string; end_date?: string } | null>(null);
+  const [semesters, setSemesters] = useState<any[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { timetable, isLoaded: timetableLoaded, loadTimetable } = useTimetable();
@@ -79,12 +95,14 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     try {
       setError(null);
       await getDatabase();
-      const [savedRecords, savedSubjects, savedHolidays, savedBaselines, savedSettings] = await Promise.all([
+      const [savedRecords, savedSubjects, savedHolidays, savedBaselines, savedSettings, activeSem, allSems] = await Promise.all([
         getAttendanceRecords(),
         dbGetSubjects(),
         dbGetHolidays(),
         getAttendanceBaselines(),
         getSettings(),
+        getActiveSemester(),
+        getSemesters(),
       ]);
 
       setRecords(savedRecords || []);
@@ -94,6 +112,8 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
       if (savedSettings) {
         setSettings(savedSettings);
       }
+      setActiveSemesterState(activeSem || null);
+      setSemesters(allSems || []);
       await loadTimetable();
       setIsLoaded(true);
     } catch (e: any) {
@@ -189,10 +209,21 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
   const getOverallSummary = useCallback((): OverallAttendanceSummary => {
     let totalAttended = 0;
     let totalConducted = 0;
+    let theoryAttended = 0;
+    let theoryConducted = 0;
+    let practicalAttended = 0;
+    let practicalConducted = 0;
     const atRiskComponents: string[] = [];
 
     // Sum all marked records (non-none)
     for (const r of records) {
+      if (r.component === 'theory') {
+        theoryConducted += r.weight;
+        if (r.status === 'present') theoryAttended += r.weight;
+      } else if (r.component === 'practical') {
+        practicalConducted += r.weight;
+        if (r.status === 'present') practicalAttended += r.weight;
+      }
       if (r.component !== 'none') {
         totalConducted += r.weight;
         if (r.status === 'present') totalAttended += r.weight;
@@ -201,8 +232,17 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
 
     // Sum baselines
     for (const b of baselines) {
-      totalAttended += b.attendedWeight || 0;
-      totalConducted += b.conductedWeight || 0;
+      const att = b.attendedWeight || 0;
+      const cond = b.conductedWeight || 0;
+      totalAttended += att;
+      totalConducted += cond;
+      if (b.component === 'theory') {
+        theoryAttended += att;
+        theoryConducted += cond;
+      } else if (b.component === 'practical') {
+        practicalAttended += att;
+        practicalConducted += cond;
+      }
     }
 
     // Check component-level risks for all subjects
@@ -223,12 +263,20 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
 
     const percentage = totalConducted > 0 ? (totalAttended / totalConducted) * 100 : null;
     const isAboveTarget = percentage !== null ? percentage >= (settings.targetPercentage * 100) : null;
+    const theoryPercentage = theoryConducted > 0 ? (theoryAttended / theoryConducted) * 100 : null;
+    const practicalPercentage = practicalConducted > 0 ? (practicalAttended / practicalConducted) * 100 : null;
 
     return {
       attended: totalAttended,
       conducted: totalConducted,
       percentage,
       isAboveTarget,
+      theoryAttended,
+      theoryConducted,
+      theoryPercentage,
+      practicalAttended,
+      practicalConducted,
+      practicalPercentage,
       atRiskComponents,
     };
   }, [records, baselines, subjects, getSubjectSummary, settings.targetPercentage]);
@@ -289,6 +337,18 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     await saveSettings(updated);
   };
 
+  const switchSemester = async (semesterId: string) => {
+    await dbSetActiveSemester(semesterId);
+    await loadData();
+    triggerBackgroundSync();
+  };
+
+  const createNewSemester = async (name: string, startDate: string, endDate?: string) => {
+    await dbCreateSemester(name, startDate, endDate);
+    await loadData();
+    triggerBackgroundSync();
+  };
+
   const value: AttendanceContextType = {
     records,
     subjects,
@@ -296,6 +356,8 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     baselines,
     settings,
     timetable,
+    activeSemester,
+    semesters,
     isLoaded: isLoaded && timetableLoaded,
     error,
     loadData,
@@ -312,6 +374,8 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     saveSubject,
     deleteSubject,
     updateSettings,
+    switchSemester,
+    createNewSemester,
   };
 
   return React.createElement(AttendanceContext.Provider, { value }, children);
@@ -328,13 +392,27 @@ export const useAttendance = (): AttendanceContextType => {
       baselines: [],
       settings: { studentBatch: 'Batch I', targetPercentage: 0.75 },
       timetable: [],
+      activeSemester: null,
+      semesters: [],
       isLoaded: true,
       error: null,
       loadData: async () => {},
       saveRecord: async () => {},
       deleteRecord: async () => {},
       getSubjectSummary: () => ({ attendedWeight: 0, conductedWeight: 0, percentage: null, targetPercentage: 0.75, isAboveTarget: null }),
-      getOverallSummary: () => ({ attended: 0, conducted: 0, percentage: null, isAboveTarget: null, atRiskComponents: [] }),
+      getOverallSummary: () => ({
+        attended: 0,
+        conducted: 0,
+        percentage: null,
+        isAboveTarget: null,
+        theoryAttended: 0,
+        theoryConducted: 0,
+        theoryPercentage: null,
+        practicalAttended: 0,
+        practicalConducted: 0,
+        practicalPercentage: null,
+        atRiskComponents: [],
+      }),
       getTodaySessions: () => [],
       getRecordsByDate: () => [],
       getSubjectRecords: () => [],
@@ -344,6 +422,8 @@ export const useAttendance = (): AttendanceContextType => {
       saveSubject: async () => {},
       deleteSubject: async () => {},
       updateSettings: async () => {},
+      switchSemester: async () => {},
+      createNewSemester: async () => {},
     };
   }
   return context;

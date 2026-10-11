@@ -24,6 +24,7 @@ import {
   validateSemesterInput, 
   validateTimetableSlotInput 
 } from '../features/setup/setupDomain';
+import { NativeTimePicker } from '../components/NativeTimePicker';
 
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -554,23 +555,19 @@ export default function SetupScreen() {
 
               <View style={styles.rowInputs}>
                 <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.inputLabel}>Start Time</Text>
-                  <TextInput
-                    style={styles.smallInput}
+                  <NativeTimePicker
+                    label="Start Time"
                     value={startTime}
-                    onChangeText={setStartTime}
-                    placeholder="10:00"
-                    placeholderTextColor={theme.colors.textMuted}
+                    onChange={setStartTime}
+                    icon="time-outline"
                   />
                 </View>
                 <View style={{ flex: 1, marginLeft: 8 }}>
-                  <Text style={styles.inputLabel}>End Time</Text>
-                  <TextInput
-                    style={styles.smallInput}
+                  <NativeTimePicker
+                    label="End Time"
                     value={endTime}
-                    onChangeText={setEndTime}
-                    placeholder="11:00"
-                    placeholderTextColor={theme.colors.textMuted}
+                    onChange={setEndTime}
+                    icon="time-outline"
                   />
                 </View>
               </View>

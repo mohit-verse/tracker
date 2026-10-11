@@ -33,14 +33,21 @@ export const useSync = () => {
     // We just rely on sync succeeding or failing.
     // Check outbox
     const db = await getDatabase();
-    const countResult = await db.getFirstAsync<{ count: number }>(`SELECT COUNT(*) as count FROM sync_outbox WHERE status != 'failed' OR retry_count < 5`);
+    const countResult = await db.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) as count FROM sync_outbox WHERE status != 'failed' OR retry_count < 5`
+    );
     const count = countResult?.count || 0;
     setOutboxCount(count);
 
-    if (count === 0) {
-      setSyncState('Synced');
+    const failedResult = await db.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) as count FROM sync_outbox WHERE status = 'failed' AND retry_count >= 5`
+    );
+    const failedCount = failedResult?.count || 0;
+
+    if (failedCount > 0) {
+      setSyncState('Sync failed');
     } else {
-      setSyncState('Sync failed'); // Will update when sync runs
+      setSyncState('Synced');
     }
   }, []);
 
@@ -56,18 +63,27 @@ export const useSync = () => {
   }, [checkStatus]);
 
   const syncNow = useCallback(async () => {
-    if (syncState === 'Authentication required' || syncState === 'Waiting for internet') return;
+    if (!isSupabaseConfigured) {
+      setSyncState('Authentication required');
+      return;
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setSyncState('Authentication required');
+      return;
+    }
 
     setSyncState('Syncing');
     try {
       await pullRemoteChanges();
       await processOutbox();
       await checkStatus();
-    } catch (e) {
-      console.error('Manual sync failed:', e);
+    } catch (e: any) {
+      console.warn('Manual sync failed:', e);
       setSyncState('Sync failed');
     }
-  }, [syncState, checkStatus]);
+  }, [checkStatus]);
 
   return {
     syncState,

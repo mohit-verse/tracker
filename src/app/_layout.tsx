@@ -90,17 +90,33 @@ function RootLayoutNav() {
   );
 }
 
+import { ThemeProvider, DarkTheme } from '@react-navigation/native';
+
+const trackerNavTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: theme.colors.background,
+    card: theme.colors.surface,
+    text: theme.colors.textPrimary,
+    border: theme.colors.border,
+    primary: theme.colors.primary,
+  },
+};
+
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <AttendanceProvider>
-        <View style={styles.container}>
-          <StatusBar style="light" />
-          <BackgroundGlow />
-          <RootLayoutNav />
-        </View>
-      </AttendanceProvider>
-    </AuthProvider>
+    <ThemeProvider value={trackerNavTheme}>
+      <AuthProvider>
+        <AttendanceProvider>
+          <View style={styles.container}>
+            <StatusBar style="light" />
+            <BackgroundGlow />
+            <RootLayoutNav />
+          </View>
+        </AttendanceProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

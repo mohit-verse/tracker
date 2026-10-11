@@ -163,3 +163,52 @@ export const validateBackupDocument = (doc: unknown): ValidationResult => {
 
   return { valid: errors.length === 0, errors };
 };
+
+/**
+ * Generates spreadsheet-friendly CSV text for Attendance History.
+ */
+export function generateAttendanceCSV(
+  records: AttendanceRecord[],
+  subjects: { id: string; name: string }[] = []
+): string {
+  const subjectMap = new Map(subjects.map(s => [s.id, s.name]));
+  const headers = ['Date', 'Subject Name', 'Subject ID', 'Component', 'Status', 'Weight', 'Created At'];
+  const rows = records.map(r => {
+    const rawName = subjectMap.get(r.subjectId) || r.subjectId;
+    const escapedName = `"${rawName.replace(/"/g, '""')}"`;
+    return [
+      r.date,
+      escapedName,
+      r.subjectId,
+      r.component,
+      r.status,
+      r.weight,
+      r.createdAt || ''
+    ].join(',');
+  });
+  return [headers.join(','), ...rows].join('\n');
+}
+
+/**
+ * Generates spreadsheet-friendly CSV text for Habits History.
+ */
+export function generateHabitsCSV(
+  habits: Habit[],
+  habitEntries: HabitEntry[]
+): string {
+  const habitMap = new Map(habits.map(h => [h.id, h.name]));
+  const headers = ['Date', 'Habit Name', 'Habit ID', 'Count', 'Logged At'];
+  const rows = habitEntries.map(e => {
+    const rawName = habitMap.get(e.habit_id) || e.habit_id;
+    const escapedName = `"${rawName.replace(/"/g, '""')}"`;
+    return [
+      e.date,
+      escapedName,
+      e.habit_id,
+      e.count,
+      e.created_at || ''
+    ].join(',');
+  });
+  return [headers.join(','), ...rows].join('\n');
+}
+
