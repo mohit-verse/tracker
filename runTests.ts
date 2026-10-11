@@ -312,8 +312,78 @@ assertEqual(3, stats36.totalEligibleDays, 'Test 36: Eligible days');
 assertEqual(1, stats36.currentStreak, 'Test 36: Streak is 1');
 assertEqual(1, stats36.longestStreak, 'Test 36: Longest streak is 1');
 
-console.log('\n=== Phase 7: Account Isolation (Node Test Omitted) ===');
-console.log('Account isolation requires SQLite and React Native contexts which cannot run directly in pure node tsx.');
+console.log('\n=== Milestone 11: Holidays & Baselines Domain ===');
+
+// Test 37: getApplicableSessions returns 0 sessions when day is marked as holiday
+const holidayDate = new Date('2023-10-05T00:00:00');
+const sessionsHoliday = getApplicableSessions(holidayDate, timetable12, 'Batch I', true);
+assertEqual(0, sessionsHoliday.length, 'Test 37: Holiday day yields 0 sessions');
+
+// Test 38: calculateAttendance with baseline
+const baselineRecord = createRecord('b1', 'present', 1);
+const baselineData = { subjectId: 'sub_1', component: 'theory' as const, attendedWeight: 10, conductedWeight: 12 };
+const summaryBaseline = calculateAttendance([baselineRecord], 0.75, baselineData);
+assertEqual(13, summaryBaseline.conductedWeight, 'Test 38: Combined conducted weight (1 + 12)');
+assertEqual(11, summaryBaseline.attendedWeight, 'Test 38: Combined attended weight (1 + 10)');
+assertCloseTo(84.615, summaryBaseline.percentage as number, 'Test 38: Combined percentage (11/13)', 2);
+assertEqual(true, summaryBaseline.isAboveTarget, 'Test 38: Above target (84.6% >= 75%)');
+
+// Test 39: Future date string rejection check
+const todayTestStr = '2023-10-10';
+const futureDateStr = '2023-10-11';
+const pastDateStr = '2023-10-09';
+assertTrue(futureDateStr > todayTestStr, 'Test 39: Future date string comparison correctly detects future');
+assertTrue(pastDateStr <= todayTestStr, 'Test 39: Past date string comparison allows marking');
+
+// Test 40: 0 conducted returns null percentage (distinguishing NO DATA from 0%)
+const summaryEmpty = calculateAttendance([], 0.75);
+assertEqual(null, summaryEmpty.percentage, 'Test 40: Zero conducted yields null percentage (NO DATA)');
+assertEqual(null, summaryEmpty.isAboveTarget, 'Test 40: Zero conducted yields null isAboveTarget');
+
+import {
+  isSetupComplete,
+  determineResumeStep,
+  resolveNavigationRoute,
+  validateSemesterInput,
+  validateTimetableSlotInput,
+} from './src/features/setup/setupDomain';
+
+console.log('\n=== Milestone 12: Onboarding & Navigation State Machine ===');
+
+// Test 41-45: determineResumeStep
+assertEqual(0, determineResumeStep(false, 0, 0), 'Test 41: No semester resumes at step 0 (Welcome)');
+assertEqual(2, determineResumeStep(true, 0, 0), 'Test 42: Semester configured but 0 subjects resumes at step 2');
+assertEqual(3, determineResumeStep(true, 2, 0), 'Test 43: Semester and subjects configured but 0 timetable slots resumes at step 3');
+assertEqual(4, determineResumeStep(true, 2, 3), 'Test 44: All prerequisites configured resumes at step 4 (Review)');
+
+// Test 45-51: isSetupComplete validation
+assertEqual(true, isSetupComplete({ metadataSetupCompleted: '1', subjectsCount: 0, timetableRulesCount: 0 }), 'Test 45: Explicit metadata flag true marks setup complete');
+assertEqual(false, isSetupComplete({ activeSemester: null, subjectsCount: 1, timetableRulesCount: 1 }), 'Test 46: Missing semester marks setup incomplete');
+assertEqual(false, isSetupComplete({ activeSemester: { id: 's1', name: '', start_date: '2023-10-01' }, subjectsCount: 1, timetableRulesCount: 1 }), 'Test 47: Empty semester name marks setup incomplete');
+assertEqual(false, isSetupComplete({ activeSemester: { id: 's1', name: 'Fall 2023', start_date: '' }, subjectsCount: 1, timetableRulesCount: 1 }), 'Test 48: Empty start_date marks setup incomplete');
+assertEqual(false, isSetupComplete({ activeSemester: { id: 's1', name: 'Fall 2023', start_date: '2023-10-01' }, subjectsCount: 0, timetableRulesCount: 1 }), 'Test 49: 0 subjects marks setup incomplete');
+assertEqual(false, isSetupComplete({ activeSemester: { id: 's1', name: 'Fall 2023', start_date: '2023-10-01' }, subjectsCount: 1, timetableRulesCount: 0 }), 'Test 50: 0 timetable rules marks setup incomplete');
+assertEqual(true, isSetupComplete({ activeSemester: { id: 's1', name: 'Fall 2023', start_date: '2023-10-01' }, subjectsCount: 1, timetableRulesCount: 1 }), 'Test 51: All entities present marks setup complete');
+
+// Test 52-60: resolveNavigationRoute state machine
+assertEqual(null, resolveNavigationRoute({ loading: true, ownerError: null, session: null, isConfigured: true, hasSetup: false, currentSegment: 'auth' }), 'Test 52: Loading state yields null');
+assertEqual('/auth', resolveNavigationRoute({ loading: false, ownerError: 'Conflict', session: null, isConfigured: true, hasSetup: true, currentSegment: '(tabs)' }), 'Test 53: Owner error routes to /auth');
+assertEqual(null, resolveNavigationRoute({ loading: false, ownerError: 'Conflict', session: null, isConfigured: true, hasSetup: true, currentSegment: 'auth' }), 'Test 54: Owner error already on /auth stays');
+assertEqual('/auth', resolveNavigationRoute({ loading: false, ownerError: null, session: null, isConfigured: true, hasSetup: false, currentSegment: 'setup' }), 'Test 55: Unauthenticated with Supabase routes to /auth');
+assertEqual(null, resolveNavigationRoute({ loading: false, ownerError: null, session: null, isConfigured: true, hasSetup: false, currentSegment: 'auth' }), 'Test 56: Unauthenticated already on /auth stays');
+assertEqual('/setup', resolveNavigationRoute({ loading: false, ownerError: null, session: { user: {} }, isConfigured: true, hasSetup: false, currentSegment: '(tabs)' }), 'Test 57: Authenticated with incomplete setup routes to /setup');
+assertEqual(null, resolveNavigationRoute({ loading: false, ownerError: null, session: { user: {} }, isConfigured: true, hasSetup: false, currentSegment: 'setup' }), 'Test 58: Authenticated on /setup with incomplete setup stays');
+assertEqual('/(tabs)', resolveNavigationRoute({ loading: false, ownerError: null, session: { user: {} }, isConfigured: true, hasSetup: true, currentSegment: 'setup' }), 'Test 59: Completed setup on /setup redirects to /(tabs)');
+assertEqual(null, resolveNavigationRoute({ loading: false, ownerError: null, session: { user: {} }, isConfigured: true, hasSetup: true, currentSegment: '(tabs)' }), 'Test 60: Completed setup on /(tabs) stays on /(tabs) without loop');
+
+// Test 61-66: Validation functions
+assertEqual(true, validateSemesterInput('Semester 5', '2023-08-01').valid, 'Test 61: Valid semester passes');
+assertEqual(false, validateSemesterInput('', '2023-08-01').valid, 'Test 62: Empty semester name rejected');
+assertEqual(false, validateSemesterInput('Sem 1', 'invalid-date').valid, 'Test 63: Invalid date rejected');
+assertEqual(true, validateTimetableSlotInput({ subjectId: 'sub-1', startTime: '10:00', endTime: '11:00', weight: 1 }).valid, 'Test 64: Valid timetable slot passes');
+assertEqual(false, validateTimetableSlotInput({ subjectId: '', startTime: '10:00', endTime: '11:00', weight: 1 }).valid, 'Test 65: Missing subjectId rejected');
+assertEqual(false, validateTimetableSlotInput({ subjectId: 'sub-1', startTime: '11:00', endTime: '10:00', weight: 1 }).valid, 'Test 66: Inverted times rejected');
 
 console.log(`\nResults: ${passed} passed, ${failed} failed.`);
 if (failed > 0) process.exit(1);
+

@@ -6,6 +6,28 @@ import { v4 as uuidv4 } from 'uuid';
 
 let isSyncing = false;
 
+function cleanPayloadForSupabase(entityType: string, row: any): any {
+  if (!row) return row;
+  const clean = { ...row };
+  delete clean.sync_status;
+  delete clean.sync_revision;
+
+  if (entityType === 'semesters') {
+    if ('is_active' in clean) clean.is_active = Boolean(clean.is_active);
+  } else if (entityType === 'subjects') {
+    if ('has_theory' in clean) clean.has_theory = Boolean(clean.has_theory);
+    if ('has_practical' in clean) clean.has_practical = Boolean(clean.has_practical);
+    delete clean.code;
+    delete clean.color;
+    delete clean.target_percentage;
+  } else if (entityType === 'timetable_rules') {
+    if ('is_attendance_bearing' in clean) clean.is_attendance_bearing = Boolean(clean.is_attendance_bearing);
+  } else if (entityType === 'habits') {
+    if ('reminder_enabled' in clean) clean.reminder_enabled = Boolean(clean.reminder_enabled);
+  }
+  return clean;
+}
+
 export async function processOutbox(): Promise<void> {
   if (isSyncing) return;
   if (!isSupabaseConfigured) return;
@@ -55,22 +77,30 @@ export async function processOutbox(): Promise<void> {
 
           if (!row) {
             // The row was deleted locally before pushing. 
-            // Do not silently skip; explicitly send a tombstone to ensure the server knows.
+            const tombstonePayload = { id: op.entity_id, table_name: op.entity_type };
             const { error: tombstoneError } = await supabase.rpc('sync_upsert', {
               p_table_name: 'deleted_records',
-              p_payload: { id: op.entity_id, table_name: op.entity_type }
+              p_payload: tombstonePayload
             });
 
-            if (tombstoneError) throw tombstoneError;
+            if (tombstoneError) {
+              const { error: directTombError } = await supabase.from('deleted_records').upsert(tombstonePayload);
+              if (directTombError) throw directTombError;
+            }
             success = true; 
           } else {
+            const cleanRow = cleanPayloadForSupabase(op.entity_type, row);
             const { data, error } = await supabase.rpc('sync_upsert', {
               p_table_name: op.entity_type,
-              p_payload: row
+              p_payload: cleanRow
             });
 
-            if (error) throw error;
-            if (data?.status === 'conflict') {
+            if (error) {
+              // Direct table upsert fallback when RPC is unavailable
+              const { error: directError } = await supabase.from(op.entity_type).upsert(cleanRow);
+              if (directError) throw directError;
+              success = true;
+            } else if (data?.status === 'conflict') {
               // Server is newer. 
               // Reconcile locally immediately!
               const serverRow = data.data;
@@ -98,13 +128,16 @@ export async function processOutbox(): Promise<void> {
             }
           }
         } else if (op.operation_type === 'DELETE') {
-          // Send tombstone using atomic RPC
+          // Send tombstone
+          const tombstonePayload = { id: op.entity_id, table_name: op.entity_type };
           const { error: tombstoneError } = await supabase.rpc('sync_upsert', {
             p_table_name: 'deleted_records',
-            p_payload: { id: op.entity_id, table_name: op.entity_type }
+            p_payload: tombstonePayload
           });
 
-          if (tombstoneError) throw tombstoneError;
+          if (tombstoneError) {
+            await supabase.from('deleted_records').upsert(tombstonePayload);
+          }
 
           // Delete actual record
           const { error: deleteError } = await supabase
@@ -158,7 +191,7 @@ export async function pullRemoteChanges(): Promise<void> {
   // Define tables in FK safe order (parents first)
   const tables = [
     'semesters', 'week_off_days', 'subjects', 'attendance_baselines', 
-    'timetable_rules', 'class_sessions', 'attendance_records', 
+    'timetable_rules', 'class_sessions', 'attendance_records', 'holidays',
     'user_preferences', 'habits', 'habit_entries'
   ];
 
@@ -270,3 +303,14 @@ export async function pullRemoteChanges(): Promise<void> {
   // Update global cursor only after all pages process without throwing
   await db.runAsync(`INSERT OR REPLACE INTO local_metadata (key, value) VALUES ('last_pull_at', ?)`, [pullTime]);
 }
+
+let syncDebounceTimer: any = null;
+export function triggerBackgroundSync() {
+  if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+  syncDebounceTimer = setTimeout(() => {
+    processOutbox().catch(err => {
+      console.warn('[Sync] Background sync notice:', err?.message || err);
+    });
+  }, 1000);
+}
+

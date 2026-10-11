@@ -14,11 +14,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const getSubjectIcon = (name: string): keyof typeof Ionicons.glyphMap => {
   const lower = name.toLowerCase();
-  if (lower.includes('programming') || lower.includes('c ')) return 'code-slash';
+  if (lower.includes('programming') || lower.includes('c ') || lower.includes('code')) return 'code-slash';
   if (lower.includes('python')) return 'logo-python';
   if (lower.includes('communication')) return 'chatbubble-outline';
-  if (lower.includes('multi')) return 'book-outline';
-  if (lower.includes('data')) return 'bar-chart-outline';
+  if (lower.includes('multi') || lower.includes('course')) return 'book-outline';
+  if (lower.includes('data') || lower.includes('analytics')) return 'bar-chart-outline';
   if (lower.includes('project')) return 'folder-outline';
   if (lower.includes('lab')) return 'flask-outline';
   return 'document-text-outline';
@@ -26,7 +26,15 @@ const getSubjectIcon = (name: string): keyof typeof Ionicons.glyphMap => {
 
 export default function SubjectDetailScreen() {
   const { id } = useLocalSearchParams();
-  const { getSubjectRecords, getSubjectSummary, deleteRecord, saveRecord, settings, isLoaded } = useAttendance();
+  const { 
+    subjects,
+    getSubjectRecords, 
+    getSubjectSummary, 
+    deleteRecord, 
+    saveRecord, 
+    settings, 
+    isLoaded 
+  } = useAttendance();
   const insets = useSafeAreaInsets();
   
   const [historyFilter, setHistoryFilter] = useState<'all' | 'theory' | 'practical'>('all');
@@ -36,7 +44,7 @@ export default function SubjectDetailScreen() {
   const [simulatedMiss, setSimulatedMiss] = useState(0);
 
   const subjectId = Array.isArray(id) ? id[0] : id;
-  const subject = MOCK_SUBJECTS.find(s => s.id === subjectId);
+  const subject = subjects.find(s => s.id === subjectId) || MOCK_SUBJECTS.find(s => s.id === subjectId);
 
   if (!isLoaded) {
     return (
@@ -53,6 +61,9 @@ export default function SubjectDetailScreen() {
         <BackgroundGlow />
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Subject not found</Text>
+          <TouchableOpacity style={styles.errorBackBtn} onPress={() => router.back()}>
+            <Text style={styles.errorBackBtnText}>Go Back</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -71,8 +82,8 @@ export default function SubjectDetailScreen() {
   let plannerData = {
     canMiss: 0,
     needToAttend: 0,
-    text: "No attendance data to plan.",
-    currentPercent: "0%",
+    text: "No attendance data recorded yet.",
+    currentPercent: "N/A",
     currentFrac: "0 / 0"
   };
 
@@ -92,9 +103,9 @@ export default function SubjectDetailScreen() {
     );
 
     if (activePlannerSummary.isAboveTarget) {
-      plannerData.text = `You can miss ${plannerData.canMiss} more class${plannerData.canMiss !== 1 ? 'es' : ''} and stay at or above ${settings.targetPercentage * 100}%.`;
+      plannerData.text = `You can miss ${plannerData.canMiss} more class${plannerData.canMiss !== 1 ? 'es' : ''} and stay at or above ${Math.round(settings.targetPercentage * 100)}%.`;
     } else {
-      plannerData.text = `Attend the next ${plannerData.needToAttend} class${plannerData.needToAttend !== 1 ? 'es' : ''} to reach ${settings.targetPercentage * 100}%.`;
+      plannerData.text = `Attend the next ${plannerData.needToAttend} class${plannerData.needToAttend !== 1 ? 'es' : ''} to reach ${Math.round(settings.targetPercentage * 100)}%.`;
     }
   }
 
@@ -110,23 +121,42 @@ export default function SubjectDetailScreen() {
 
   const historyRecords = getSubjectRecords(subject.id, historyFilter);
 
-  const toggleRecordStatus = async (record: AttendanceRecord) => {
+  const toggleRecordStatus = (record: AttendanceRecord) => {
     const newStatus = record.status === 'present' ? 'absent' : 'present';
-    await saveRecord(
-      record.subjectId,
-      record.component,
-      record.date,
-      record.timetableEntryId,
-      newStatus,
-      record.weight
+    const currentLabel = record.status === 'present' ? 'Present' : 'Absent';
+    const newLabel = newStatus === 'present' ? 'Present' : 'Absent';
+
+    Alert.alert(
+      'Change Attendance Status',
+      `Change attendance for ${record.date} from ${currentLabel} to ${newLabel}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Mark ${newLabel}`,
+          onPress: async () => {
+            await saveRecord(
+              record.subjectId,
+              record.component,
+              record.date,
+              record.timetableEntryId,
+              newStatus,
+              record.weight
+            );
+          },
+        },
+      ]
     );
   };
 
   const confirmDelete = (recordId: string) => {
-    Alert.alert("Delete Record", "Are you sure you want to delete this record?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => deleteRecord(recordId) }
-    ]);
+    Alert.alert(
+      "Delete Record", 
+      "Are you sure you want to delete this record? This will adjust your overall percentage.", 
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => deleteRecord(recordId) }
+      ]
+    );
   };
 
   const SummaryComponent = ({ summary, label }: { summary?: AttendanceSummary | null; label: string }) => {
@@ -134,19 +164,20 @@ export default function SubjectDetailScreen() {
     const hasData = summary.percentage !== null;
     const isSafe = hasData && summary.isAboveTarget;
     const statusText = !hasData ? 'NO DATA' : (isSafe ? 'SAFE' : 'BELOW 75%');
-    const statusColor = !hasData ? theme.colors.textMuted : theme.colors.primary;
+    const statusColor = !hasData ? theme.colors.textMuted : (isSafe ? theme.colors.primary : theme.colors.danger);
+    const statusBg = isSafe ? 'rgba(199, 107, 53, 0.1)' : (!hasData ? 'transparent' : 'rgba(232, 76, 76, 0.1)');
 
     return (
       <View style={styles.summarySubContainer}>
-        <CircularProgress percentage={summary.percentage} label="" size={56} strokeWidth={5} />
+        <CircularProgress percentage={summary.percentage} label="" size={52} strokeWidth={5} />
         <View style={styles.statsSubContainer}>
           <Text style={styles.componentLabel}>{label}</Text>
           <View style={styles.fractionRow}>
-            <Text style={styles.fractionAttended}>{summary.attendedWeight}</Text>
+            <Text style={[styles.fractionAttended, !hasData && styles.fractionMuted]}>{summary.attendedWeight}</Text>
             <Text style={styles.fractionTotal}> / {summary.conductedWeight}</Text>
           </View>
           <Text style={styles.classesText}>classes</Text>
-          <View style={[styles.statusPill, { borderColor: statusColor }]}>
+          <View style={[styles.statusPill, { borderColor: statusColor, backgroundColor: statusBg }]}>
             <Text style={[styles.statusPillText, { color: statusColor }]}>{statusText}</Text>
           </View>
         </View>
@@ -166,17 +197,17 @@ export default function SubjectDetailScreen() {
           <Ionicons name="chevron-back" size={24} color={theme.colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Subject Detail</Text>
-        <TouchableOpacity style={styles.menuBtn}>
-          <Ionicons name="ellipsis-horizontal" size={24} color={theme.colors.textPrimary} />
-        </TouchableOpacity>
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}>
-        
+      <ScrollView 
+        style={styles.scroll} 
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]}
+      >
         {/* Title Card */}
         <View style={styles.titleCard}>
           <View style={styles.titleIconBox}>
-            <Ionicons name={iconName} size={28} color={theme.colors.primary} />
+            <Ionicons name={iconName} size={24} color={theme.colors.primary} />
           </View>
           <View style={styles.titleTextContainer}>
             <Text style={styles.subjectName} numberOfLines={2}>{subject.name}</Text>
@@ -186,10 +217,10 @@ export default function SubjectDetailScreen() {
           </View>
         </View>
 
-        {/* Overview */}
+        {/* Attendance Overview Card */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Ionicons name="bar-chart" size={16} color={theme.colors.textSecondary} style={{marginRight: 8}}/>
+            <Ionicons name="bar-chart-outline" size={16} color={theme.colors.primary} style={{ marginRight: 8 }}/>
             <Text style={styles.cardTitle}>Attendance Overview</Text>
           </View>
           <View style={styles.overviewRow}>
@@ -205,11 +236,11 @@ export default function SubjectDetailScreen() {
           </View>
         </View>
 
-        {/* Planner */}
+        {/* Attendance Planner Card */}
         <View style={styles.card}>
           <View style={styles.plannerHeader}>
-            <View style={{flexDirection: 'row', alignItems: 'center'}}>
-              <Ionicons name="disc" size={16} color={theme.colors.textSecondary} style={{marginRight: 8}}/>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name="disc-outline" size={16} color={theme.colors.primary} style={{ marginRight: 8 }}/>
               <Text style={styles.cardTitle}>Attendance Planner</Text>
             </View>
             {subject.hasTheory && subject.hasPractical && (
@@ -230,6 +261,7 @@ export default function SubjectDetailScreen() {
             )}
           </View>
 
+          {/* Stacked planner text & responsive 3-column metric grid */}
           <View style={styles.plannerStatsGrid}>
             <View style={styles.plannerMainTextContainer}>
               <Text style={styles.plannerMainText}>{plannerData.text}</Text>
@@ -241,11 +273,13 @@ export default function SubjectDetailScreen() {
                 <Text style={styles.plannerMetricPercent}>{plannerData.currentPercent}</Text>
                 <Text style={styles.plannerMetricFrac}>{plannerData.currentFrac}</Text>
               </View>
+              <View style={styles.metricSeparator} />
               <View style={styles.plannerMetric}>
                 <Text style={styles.plannerMetricLabel}>Can miss</Text>
                 <Text style={styles.plannerMetricValue}>{plannerData.canMiss}</Text>
                 <Text style={styles.plannerMetricLabelBox}>class{plannerData.canMiss !== 1 ? 'es' : ''}</Text>
               </View>
+              <View style={styles.metricSeparator} />
               <View style={styles.plannerMetric}>
                 <Text style={styles.plannerMetricLabel}>Need to attend</Text>
                 <Text style={styles.plannerMetricValue}>{plannerData.needToAttend}</Text>
@@ -254,40 +288,57 @@ export default function SubjectDetailScreen() {
             </View>
           </View>
 
+          {/* What-If Section */}
           <View style={styles.whatIfSection}>
             <View style={styles.whatIfHeader}>
-              <Ionicons name="stats-chart" size={14} color={theme.colors.textSecondary} style={{marginRight: 6}}/>
+              <Ionicons name="stats-chart-outline" size={14} color={theme.colors.primary} style={{ marginRight: 6 }}/>
               <Text style={styles.cardTitle}>What If?</Text>
             </View>
             <View style={styles.whatIfBody}>
               <View style={styles.whatIfControlsGroup}>
-                <Text style={styles.whatIfLabel}>Future classes to attend</Text>
+                <Text style={styles.whatIfLabel}>Attend more</Text>
                 <View style={styles.stepper}>
-                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setSimulatedAttend(Math.max(0, simulatedAttend - 1))}>
-                    <Ionicons name="remove" size={18} color={theme.colors.textPrimary} />
+                  <TouchableOpacity 
+                    style={styles.stepperBtn} 
+                    onPress={() => setSimulatedAttend(Math.max(0, simulatedAttend - 1))}
+                    accessibilityLabel="Decrease simulated attend"
+                  >
+                    <Ionicons name="remove" size={16} color={theme.colors.textPrimary} />
                   </TouchableOpacity>
                   <Text style={styles.stepperValue}>{simulatedAttend}</Text>
-                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setSimulatedAttend(simulatedAttend + 1)}>
-                    <Ionicons name="add" size={18} color={theme.colors.textPrimary} />
+                  <TouchableOpacity 
+                    style={styles.stepperBtn} 
+                    onPress={() => setSimulatedAttend(simulatedAttend + 1)}
+                    accessibilityLabel="Increase simulated attend"
+                  >
+                    <Ionicons name="add" size={16} color={theme.colors.textPrimary} />
                   </TouchableOpacity>
                 </View>
               </View>
               
               <View style={styles.whatIfControlsGroup}>
-                <Text style={styles.whatIfLabel}>Future classes to miss</Text>
+                <Text style={styles.whatIfLabel}>Miss more</Text>
                 <View style={styles.stepper}>
-                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setSimulatedMiss(Math.max(0, simulatedMiss - 1))}>
-                    <Ionicons name="remove" size={18} color={theme.colors.textPrimary} />
+                  <TouchableOpacity 
+                    style={styles.stepperBtn} 
+                    onPress={() => setSimulatedMiss(Math.max(0, simulatedMiss - 1))}
+                    accessibilityLabel="Decrease simulated miss"
+                  >
+                    <Ionicons name="remove" size={16} color={theme.colors.textPrimary} />
                   </TouchableOpacity>
                   <Text style={styles.stepperValue}>{simulatedMiss}</Text>
-                  <TouchableOpacity style={styles.stepperBtn} onPress={() => setSimulatedMiss(simulatedMiss + 1)}>
-                    <Ionicons name="add" size={18} color={theme.colors.textPrimary} />
+                  <TouchableOpacity 
+                    style={styles.stepperBtn} 
+                    onPress={() => setSimulatedMiss(simulatedMiss + 1)}
+                    accessibilityLabel="Increase simulated miss"
+                  >
+                    <Ionicons name="add" size={16} color={theme.colors.textPrimary} />
                   </TouchableOpacity>
                 </View>
               </View>
               
               <View style={styles.projectedContainer}>
-                <Text style={styles.whatIfLabel}>Projected Attendance</Text>
+                <Text style={styles.whatIfLabel}>Projected</Text>
                 <Text style={styles.projectedPercent}>{projectedPercent}</Text>
                 <Text style={styles.projectedFrac}>{projectedFrac}</Text>
               </View>
@@ -295,11 +346,11 @@ export default function SubjectDetailScreen() {
           </View>
         </View>
 
-        {/* History */}
+        {/* History Card */}
         <View style={styles.card}>
           <View style={styles.plannerHeader}>
-            <View style={{flexDirection: 'row', alignItems: 'center'}}>
-              <Ionicons name="time-outline" size={16} color={theme.colors.textSecondary} style={{marginRight: 8}}/>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name="time-outline" size={16} color={theme.colors.primary} style={{ marginRight: 8 }}/>
               <Text style={styles.cardTitle}>Attendance History</Text>
             </View>
             <View style={styles.pillGroup}>
@@ -320,14 +371,14 @@ export default function SubjectDetailScreen() {
           <View style={styles.historyList}>
             {historyRecords.length === 0 ? (
               <View style={styles.emptyHistory}>
-                <Text style={styles.emptyHistoryText}>No attendance history yet.</Text>
+                <Text style={styles.emptyHistoryText}>No attendance records for this filter.</Text>
               </View>
             ) : (
               historyRecords.map((record, idx) => (
                 <View key={record.id} style={[styles.historyRow, idx === historyRecords.length - 1 && { borderBottomWidth: 0 }]}>
                   <View style={styles.historyDateBox}>
                     <Text style={styles.historyDateText}>
-                      {new Date(record.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      {new Date(record.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
                     </Text>
                     <Text style={styles.historyDayText}>
                       {new Date(record.date).toLocaleDateString('en-GB', { weekday: 'short' })}
@@ -340,14 +391,19 @@ export default function SubjectDetailScreen() {
                   <TouchableOpacity 
                     style={[styles.historyStatus, record.status === 'present' ? styles.historyStatusP : styles.historyStatusA]}
                     onPress={() => toggleRecordStatus(record)}
+                    accessibilityLabel={`Status: ${record.status}. Tap to toggle`}
                   >
                     <View style={[styles.dot, { backgroundColor: record.status === 'present' ? theme.colors.present : theme.colors.absent }]} />
                     <Text style={[styles.historyStatusText, { color: record.status === 'present' ? theme.colors.present : theme.colors.absent }]}>
                       {record.status === 'present' ? 'Present' : 'Absent'}
                     </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.historyMenu} onPress={() => confirmDelete(record.id)}>
-                    <Ionicons name="ellipsis-vertical" size={16} color={theme.colors.textSecondary} />
+                  <TouchableOpacity 
+                    style={styles.historyDeleteBtn} 
+                    onPress={() => confirmDelete(record.id)}
+                    accessibilityLabel="Delete attendance record"
+                  >
+                    <Ionicons name="trash-outline" size={16} color={theme.colors.danger} />
                   </TouchableOpacity>
                 </View>
               ))
@@ -357,13 +413,13 @@ export default function SubjectDetailScreen() {
       </ScrollView>
 
       {/* Fixed Bottom Actions */}
-      <View style={[styles.footer, { paddingBottom: insets.bottom || 24 }]}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <TouchableOpacity style={styles.markBtn} onPress={() => router.push('/add')}>
-          <Ionicons name="pencil" size={18} color="#000" style={{marginRight: 6}} />
+          <Ionicons name="create-outline" size={18} color="#000" style={{ marginRight: 6 }} />
           <Text style={styles.markBtnText}>Mark Attendance</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.timetableBtn} onPress={() => router.push('/timetable')}>
-          <Ionicons name="calendar-outline" size={18} color={theme.colors.textPrimary} style={{marginRight: 6}} />
+          <Ionicons name="calendar-outline" size={18} color={theme.colors.textPrimary} style={{ marginRight: 6 }} />
           <Text style={styles.timetableBtnText}>View Timetable</Text>
         </TouchableOpacity>
       </View>
@@ -374,7 +430,7 @@ export default function SubjectDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: 'transparent',
   },
   header: {
     flexDirection: 'row',
@@ -387,17 +443,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: theme.colors.surfaceHighlight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  menuBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: theme.colors.surfaceHighlight,
+    backgroundColor: theme.colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
@@ -412,31 +458,45 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: theme.spacing.m,
+    paddingHorizontal: theme.spacing.m,
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: theme.spacing.xl,
   },
   errorText: {
     color: theme.colors.textPrimary,
+    fontSize: 16,
+    fontWeight: theme.typography.weights.bold,
+    marginBottom: theme.spacing.m,
+  },
+  errorBackBtn: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  errorBackBtnText: {
+    color: '#000',
+    fontWeight: 'bold',
   },
   titleCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.surfaceHighlight,
+    backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.xl,
-    padding: theme.spacing.l,
+    padding: theme.spacing.m,
     marginBottom: theme.spacing.m,
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
   titleIconBox: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     borderRadius: 12,
-    backgroundColor: theme.colors.primaryMuted,
+    backgroundColor: 'rgba(199, 107, 53, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: theme.spacing.m,
@@ -446,16 +506,16 @@ const styles = StyleSheet.create({
   },
   subjectName: {
     color: theme.colors.textPrimary,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: theme.typography.weights.bold,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   subjectComponentsText: {
     color: theme.colors.textSecondary,
-    fontSize: 14,
+    fontSize: 13,
   },
   card: {
-    backgroundColor: theme.colors.surfaceHighlight,
+    backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.xl,
     padding: theme.spacing.m,
     marginBottom: theme.spacing.m,
@@ -474,7 +534,7 @@ const styles = StyleSheet.create({
   },
   overviewRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
   summarySubContainer: {
     flex: 1,
@@ -482,12 +542,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statsSubContainer: {
-    marginLeft: theme.spacing.m,
+    marginLeft: 10,
     justifyContent: 'center',
+    flex: 1,
   },
   componentLabel: {
     color: theme.colors.textSecondary,
     fontSize: 12,
+    fontWeight: theme.typography.weights.medium,
     marginBottom: 2,
   },
   fractionRow: {
@@ -496,22 +558,25 @@ const styles = StyleSheet.create({
   },
   fractionAttended: {
     color: theme.colors.primary,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: theme.typography.weights.bold,
+  },
+  fractionMuted: {
+    color: theme.colors.textSecondary,
   },
   fractionTotal: {
     color: theme.colors.textSecondary,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: theme.typography.weights.medium,
   },
   classesText: {
-    color: theme.colors.textSecondary,
+    color: theme.colors.textMuted,
     fontSize: 10,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   statusPill: {
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 6,
     paddingVertical: 2,
     alignSelf: 'flex-start',
@@ -519,12 +584,13 @@ const styles = StyleSheet.create({
   statusPillText: {
     fontSize: 9,
     fontWeight: theme.typography.weights.bold,
+    letterSpacing: 0.5,
   },
   divider: {
     width: 1,
     backgroundColor: theme.colors.border,
-    marginHorizontal: theme.spacing.m,
-    alignSelf: 'stretch',
+    height: 56,
+    marginHorizontal: theme.spacing.s,
   },
   plannerHeader: {
     flexDirection: 'row',
@@ -541,16 +607,16 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   pill: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: theme.borderRadius.m,
   },
   pillActive: {
-    backgroundColor: 'rgba(249, 115, 22, 0.15)',
+    backgroundColor: 'rgba(199, 107, 53, 0.2)',
   },
   pillText: {
     color: theme.colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: theme.typography.weights.medium,
   },
   pillTextActive: {
@@ -558,18 +624,13 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.bold,
   },
   plannerStatsGrid: {
-    flexDirection: 'row',
-    alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
     paddingBottom: theme.spacing.m,
     marginBottom: theme.spacing.m,
   },
   plannerMainTextContainer: {
-    flex: 1.5,
-    paddingRight: theme.spacing.m,
-    borderRightWidth: 1,
-    borderRightColor: theme.colors.border,
+    marginBottom: theme.spacing.m,
   },
   plannerMainText: {
     color: theme.colors.textPrimary,
@@ -580,58 +641,75 @@ const styles = StyleSheet.create({
   },
   plannerSubText: {
     color: theme.colors.textSecondary,
-    fontSize: 11,
+    fontSize: 12,
     lineHeight: 16,
   },
   plannerMetrics: {
-    flex: 1,
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: theme.borderRadius.m,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   plannerMetric: {
+    flex: 1,
     alignItems: 'center',
+  },
+  metricSeparator: {
+    width: 1,
+    height: 36,
+    backgroundColor: theme.colors.border,
   },
   plannerMetricLabel: {
     color: theme.colors.textSecondary,
-    fontSize: 10,
+    fontSize: 11,
+    fontWeight: theme.typography.weights.medium,
     marginBottom: 4,
   },
   plannerMetricPercent: {
     color: theme.colors.primary,
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: theme.typography.weights.bold,
   },
   plannerMetricFrac: {
-    color: theme.colors.primary,
-    fontSize: 12,
+    color: theme.colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
   },
   plannerMetricValue: {
     color: theme.colors.textPrimary,
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: theme.typography.weights.bold,
   },
   plannerMetricLabelBox: {
-    color: theme.colors.textSecondary,
+    color: theme.colors.textMuted,
     fontSize: 10,
+    marginTop: 2,
   },
   whatIfSection: {},
   whatIfHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: theme.spacing.m,
+    marginBottom: theme.spacing.s,
   },
   whatIfBody: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingTop: 4,
   },
   whatIfControlsGroup: {
     alignItems: 'center',
+    flex: 1,
   },
   whatIfLabel: {
     color: theme.colors.textSecondary,
-    fontSize: 10,
-    marginBottom: 8,
+    fontSize: 11,
+    marginBottom: 6,
+    textAlign: 'center',
   },
   stepper: {
     flexDirection: 'row',
@@ -640,6 +718,8 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.m,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
   },
   stepperBtn: {
     padding: 6,
@@ -648,21 +728,25 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
     fontSize: 14,
     fontWeight: theme.typography.weights.bold,
-    marginHorizontal: 8,
-    minWidth: 16,
+    minWidth: 22,
     textAlign: 'center',
   },
   projectedContainer: {
     alignItems: 'center',
+    flex: 1,
+    borderLeftWidth: 1,
+    borderLeftColor: theme.colors.border,
+    paddingLeft: 6,
   },
   projectedPercent: {
     color: theme.colors.primary,
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: theme.typography.weights.bold,
   },
   projectedFrac: {
-    color: theme.colors.primary,
-    fontSize: 12,
+    color: theme.colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
   },
   historyList: {
     marginTop: theme.spacing.s,
@@ -673,17 +757,17 @@ const styles = StyleSheet.create({
   },
   emptyHistoryText: {
     color: theme.colors.textMuted,
-    fontSize: 14,
+    fontSize: 13,
   },
   historyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: theme.spacing.m,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
   historyDateBox: {
-    width: 90,
+    width: 76,
   },
   historyDateText: {
     color: theme.colors.textPrimary,
@@ -692,7 +776,7 @@ const styles = StyleSheet.create({
   },
   historyDayText: {
     color: theme.colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 2,
   },
   historyDetails: {
@@ -711,30 +795,33 @@ const styles = StyleSheet.create({
   historyStatus: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   historyStatusP: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    backgroundColor: 'rgba(54, 168, 102, 0.12)',
+    borderColor: 'rgba(54, 168, 102, 0.3)',
   },
   historyStatusA: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    backgroundColor: 'rgba(232, 76, 76, 0.12)',
+    borderColor: 'rgba(232, 76, 76, 0.3)',
   },
   dot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    marginRight: 6,
+    marginRight: 5,
   },
   historyStatusText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: theme.typography.weights.bold,
   },
-  historyMenu: {
+  historyDeleteBtn: {
     padding: 8,
-    marginLeft: 4,
+    marginLeft: 6,
   },
   footer: {
     position: 'absolute',
@@ -745,7 +832,7 @@ const styles = StyleSheet.create({
     gap: theme.spacing.m,
     paddingTop: theme.spacing.m,
     paddingHorizontal: theme.spacing.m,
-    backgroundColor: 'rgba(5, 5, 5, 0.85)',
+    backgroundColor: 'rgba(16, 16, 16, 0.95)',
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
   },
@@ -753,21 +840,21 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     backgroundColor: theme.colors.primary,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: theme.borderRadius.l,
     justifyContent: 'center',
     alignItems: 'center',
   },
   markBtnText: {
     color: '#000',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: theme.typography.weights.bold,
   },
   timetableBtn: {
     flex: 1,
     flexDirection: 'row',
-    backgroundColor: theme.colors.surfaceHighlight,
-    paddingVertical: 14,
+    backgroundColor: theme.colors.surface,
+    paddingVertical: 12,
     borderRadius: theme.borderRadius.l,
     justifyContent: 'center',
     alignItems: 'center',
@@ -776,7 +863,7 @@ const styles = StyleSheet.create({
   },
   timetableBtnText: {
     color: theme.colors.textPrimary,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: theme.typography.weights.bold,
-  }
+  },
 });

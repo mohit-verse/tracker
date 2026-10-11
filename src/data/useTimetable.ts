@@ -1,17 +1,35 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TimetableEntry } from '../types';
-import { MOCK_TIMETABLE } from './mock';
 import 'react-native-get-random-values';
 import { getDatabase } from '../db';
 import { getTimetable, saveTimetable } from '../db/repositories';
 
+// Module-level subscribers and cache to ensure all hook instances share the same state
+let cachedTimetable: TimetableEntry[] = [];
+let isCacheLoaded = false;
+const subscribers = new Set<(entries: TimetableEntry[]) => void>();
+
+function notifySubscribers(entries: TimetableEntry[]) {
+  cachedTimetable = entries;
+  isCacheLoaded = true;
+  subscribers.forEach(cb => cb(entries));
+}
+
 export const useTimetable = () => {
-  const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [timetable, setTimetable] = useState<TimetableEntry[]>(cachedTimetable);
+  const [isLoaded, setIsLoaded] = useState(isCacheLoaded);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadTimetable();
+    subscribers.add(setTimetable);
+    if (!isCacheLoaded) {
+      loadTimetable();
+    } else {
+      setIsLoaded(true);
+    }
+    return () => {
+      subscribers.delete(setTimetable);
+    };
   }, []);
 
   const loadTimetable = useCallback(async () => {
@@ -20,13 +38,7 @@ export const useTimetable = () => {
       await getDatabase(); // Ensure initialization
       
       const savedTimetable = await getTimetable();
-      if (savedTimetable && savedTimetable.length > 0) {
-        setTimetable(savedTimetable);
-      } else {
-        // Fallback to mock for initial state if truly empty
-        setTimetable(MOCK_TIMETABLE);
-        await saveTimetable(MOCK_TIMETABLE);
-      }
+      notifySubscribers(savedTimetable || []);
     } catch (e: any) {
       setError(e.message || 'Failed to load timetable');
     } finally {
@@ -35,26 +47,27 @@ export const useTimetable = () => {
   }, []);
 
   const saveEntry = useCallback(async (entry: TimetableEntry) => {
-    const updated = [...timetable, entry];
-    setTimetable(updated);
+    const updated = [...cachedTimetable.filter(e => e.id !== entry.id), entry];
+    notifySubscribers(updated);
     try {
       await saveTimetable(updated);
     } catch (e: any) {
       setError('Failed to save timetable: ' + e.message);
-      setTimetable(timetable); // rollback
+      // reload from DB on failure
+      loadTimetable();
     }
-  }, [timetable]);
+  }, [loadTimetable]);
 
   const deleteEntry = useCallback(async (id: string) => {
-    const updated = timetable.filter(e => e.id !== id);
-    setTimetable(updated);
+    const updated = cachedTimetable.filter(e => e.id !== id);
+    notifySubscribers(updated);
     try {
       await saveTimetable(updated);
     } catch (e: any) {
       setError('Failed to update timetable: ' + e.message);
-      setTimetable(timetable); // rollback
+      loadTimetable();
     }
-  }, [timetable]);
+  }, [loadTimetable]);
 
   return {
     timetable,

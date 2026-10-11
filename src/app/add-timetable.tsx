@@ -20,7 +20,7 @@ export default function AddTimetableScreen() {
   const insets = useSafeAreaInsets();
   
   const { timetable, saveEntry } = useTimetable();
-  const { settings } = useAttendance();
+  const { settings, subjects, saveSubject } = useAttendance();
 
   const [subjectId, setSubjectId] = useState('');
   const [dayOfWeek, setDayOfWeek] = useState<0|1|2|3|4|5|6>(1);
@@ -36,7 +36,8 @@ export default function AddTimetableScreen() {
       const entryId = Array.isArray(id) ? id[0] : id;
       const existing = timetable.find(e => e.id === entryId);
       if (existing) {
-        setSubjectId(existing.subjectId);
+        const foundSub = subjects.find(s => s.id === existing.subjectId);
+        setSubjectId(foundSub ? foundSub.name : existing.subjectId);
         setDayOfWeek(existing.dayOfWeek);
         setStartTime(existing.startTime);
         setEndTime(existing.endTime);
@@ -46,11 +47,12 @@ export default function AddTimetableScreen() {
         setBatchConstraint(existing.batchConstraint || 'All');
       }
     }
-  }, [id, isEditing, timetable]);
+  }, [id, isEditing, timetable, subjects]);
 
   const handleSave = async () => {
-    if (!subjectId) {
-      Alert.alert('Error', 'Please enter a Subject ID or Name');
+    const rawSubjectInput = subjectId.trim();
+    if (!rawSubjectInput) {
+      Alert.alert('Error', 'Please enter a Subject Name or ID');
       return;
     }
     if (startTime >= endTime) {
@@ -71,12 +73,37 @@ export default function AddTimetableScreen() {
       finalWeight = 0;
     }
 
+    // Resolve or create SQLite subject
+    let targetSubjectId = rawSubjectInput;
+    if (rawSubjectInput !== 'sports' && rawSubjectInput !== 'library') {
+      const matched = subjects.find(
+        s => s.id === rawSubjectInput || s.name.toLowerCase() === rawSubjectInput.toLowerCase()
+      );
+      if (matched) {
+        targetSubjectId = matched.id;
+        if (finalComponent === 'theory' && !matched.hasTheory) {
+          await saveSubject({ ...matched, hasTheory: true });
+        } else if (finalComponent === 'practical' && !matched.hasPractical) {
+          await saveSubject({ ...matched, hasPractical: true });
+        }
+      } else {
+        const newId = uuidv4();
+        await saveSubject({
+          id: newId,
+          name: rawSubjectInput,
+          hasTheory: finalComponent === 'theory',
+          hasPractical: finalComponent === 'practical',
+        });
+        targetSubjectId = newId;
+      }
+    }
+
     const entryId = isEditing ? (Array.isArray(id) ? id[0] : id) : uuidv4();
     
     const isDuplicate = timetable.some(e => 
       e.id !== entryId &&
       e.dayOfWeek === dayOfWeek &&
-      e.subjectId === subjectId &&
+      e.subjectId === targetSubjectId &&
       e.startTime === startTime &&
       e.endTime === endTime &&
       e.batchConstraint === batchConstraint
@@ -89,7 +116,7 @@ export default function AddTimetableScreen() {
     
     const entry: TimetableEntry = {
       id: entryId,
-      subjectId,
+      subjectId: targetSubjectId,
       dayOfWeek,
       startTime,
       endTime,
@@ -127,7 +154,7 @@ export default function AddTimetableScreen() {
         <Text style={styles.label}>Subject</Text>
         <View style={styles.inputCard}>
           <View style={styles.inputIconBox}>
-            <Ionicons name="code-slash" size={16} color={theme.colors.textSecondary} />
+            <Ionicons name="book-outline" size={16} color={theme.colors.primary} />
           </View>
           <TextInput 
             style={styles.inputText}
@@ -137,6 +164,29 @@ export default function AddTimetableScreen() {
             placeholderTextColor={theme.colors.textMuted}
           />
         </View>
+
+        {/* Existing Subject Quick Chips */}
+        {subjects.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.subjectChipsScroll}>
+            {subjects.map(s => (
+              <TouchableOpacity
+                key={s.id}
+                style={[
+                  styles.subjectChip,
+                  (subjectId.toLowerCase() === s.name.toLowerCase() || subjectId === s.id) && styles.subjectChipActive
+                ]}
+                onPress={() => setSubjectId(s.name)}
+              >
+                <Text style={[
+                  styles.subjectChipText,
+                  (subjectId.toLowerCase() === s.name.toLowerCase() || subjectId === s.id) && styles.subjectChipTextActive
+                ]}>
+                  {s.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
 
         {/* Day of Week */}
         <Text style={styles.label}>Day of Week</Text>
@@ -442,5 +492,31 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
     fontSize: 16,
     fontWeight: theme.typography.weights.semiBold,
-  }
+  },
+  subjectChipsScroll: {
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  subjectChip: {
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginRight: 8,
+  },
+  subjectChipActive: {
+    backgroundColor: 'rgba(199, 107, 53, 0.15)',
+    borderColor: theme.colors.primary,
+  },
+  subjectChipText: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: theme.typography.weights.medium,
+  },
+  subjectChipTextActive: {
+    color: theme.colors.primary,
+    fontWeight: theme.typography.weights.bold,
+  },
 });

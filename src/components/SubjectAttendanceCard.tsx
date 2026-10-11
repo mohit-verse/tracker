@@ -7,6 +7,8 @@ import { AttendanceSummary } from '../types';
 
 interface SubjectAttendanceCardProps {
   name: string;
+  hasTheory?: boolean;
+  hasPractical?: boolean;
   theorySummary?: AttendanceSummary | null;
   practicalSummary?: AttendanceSummary | null;
   onPress: () => void;
@@ -14,40 +16,69 @@ interface SubjectAttendanceCardProps {
 
 const getSubjectIcon = (name: string): keyof typeof Ionicons.glyphMap => {
   const lower = name.toLowerCase();
-  if (lower.includes('programming') || lower.includes('c ')) return 'code-slash';
+  if (lower.includes('programming') || lower.includes('c ') || lower.includes('code')) return 'code-slash';
   if (lower.includes('python')) return 'logo-python';
   if (lower.includes('communication')) return 'chatbubble-outline';
-  if (lower.includes('multi')) return 'book-outline';
-  if (lower.includes('data')) return 'bar-chart-outline';
+  if (lower.includes('multi') || lower.includes('course')) return 'book-outline';
+  if (lower.includes('data') || lower.includes('analytics')) return 'bar-chart-outline';
   if (lower.includes('project')) return 'folder-outline';
   if (lower.includes('lab')) return 'flask-outline';
   return 'document-text-outline';
 };
 
-const SummaryComponent = ({ summary, label }: { summary?: AttendanceSummary | null; label: string }) => {
-  if (!summary) return null;
+const ColumnSummary = ({
+  enabled,
+  summary,
+  label,
+}: {
+  enabled: boolean;
+  summary?: AttendanceSummary | null;
+  label: string;
+}) => {
+  const isEnabled = enabled;
+  const hasData = isEnabled && summary !== null && summary !== undefined && summary.percentage !== null;
+  const isSafe = hasData && summary!.isAboveTarget;
+  
+  let statusText = 'NO DATA';
+  let statusColor = theme.colors.textMuted;
+  let statusBg = 'transparent';
 
-  const hasData = summary.percentage !== null;
-  const isSafe = hasData && summary.isAboveTarget;
-  const statusText = !hasData ? 'NO DATA' : (isSafe ? 'SAFE' : 'BELOW 75%');
-  const statusColor = !hasData ? theme.colors.textMuted : theme.colors.primary;
+  if (!isEnabled) {
+    statusText = 'NO DATA';
+    statusColor = theme.colors.textMuted;
+  } else if (!hasData) {
+    statusText = 'NO DATA';
+    statusColor = theme.colors.textMuted;
+  } else if (isSafe) {
+    statusText = 'SAFE';
+    statusColor = theme.colors.primary;
+    statusBg = 'rgba(199, 107, 53, 0.1)';
+  } else {
+    statusText = 'BELOW 75%';
+    statusColor = theme.colors.danger;
+    statusBg = 'rgba(232, 76, 76, 0.1)';
+  }
+
+  const attended = isEnabled && summary ? summary.attendedWeight : 0;
+  const conducted = isEnabled && summary ? summary.conductedWeight : 0;
+  const percentage = hasData && summary ? summary.percentage : null;
 
   return (
     <View style={styles.summaryContainer}>
       <CircularProgress 
-        percentage={summary.percentage} 
+        percentage={percentage} 
         label="" 
-        size={56}
+        size={52}
         strokeWidth={5}
       />
       <View style={styles.statsContainer}>
         <Text style={styles.componentLabel}>{label}</Text>
         <View style={styles.fractionRow}>
-          <Text style={styles.fractionAttended}>{summary.attendedWeight}</Text>
-          <Text style={styles.fractionTotal}> / {summary.conductedWeight}</Text>
+          <Text style={[styles.fractionAttended, !hasData && styles.fractionMuted]}>{attended}</Text>
+          <Text style={styles.fractionTotal}> / {conducted}</Text>
         </View>
         <Text style={styles.classesText}>classes</Text>
-        <View style={[styles.statusPill, { borderColor: statusColor }]}>
+        <View style={[styles.statusPill, { borderColor: statusColor, backgroundColor: statusBg }]}>
           <Text style={[styles.statusText, { color: statusColor }]}>{statusText}</Text>
         </View>
       </View>
@@ -57,6 +88,8 @@ const SummaryComponent = ({ summary, label }: { summary?: AttendanceSummary | nu
 
 export const SubjectAttendanceCard: React.FC<SubjectAttendanceCardProps> = ({
   name,
+  hasTheory = true,
+  hasPractical = false,
   theorySummary,
   practicalSummary,
   onPress,
@@ -72,25 +105,30 @@ export const SubjectAttendanceCard: React.FC<SubjectAttendanceCardProps> = ({
     >
       <View style={styles.cardHeader}>
         <View style={styles.iconBox}>
-          <Ionicons name={iconName} size={20} color={theme.colors.primary} />
+          <Ionicons name={iconName} size={18} color={theme.colors.primary} />
         </View>
         <Text style={styles.title} numberOfLines={1}>
           {name}
         </Text>
-        <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+        <View style={styles.chevronBox}>
+          <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
+        </View>
       </View>
       
       <View style={styles.componentsWrapper}>
-        {theorySummary !== undefined && (
-          <SummaryComponent summary={theorySummary} label="Theory" />
-        )}
+        <ColumnSummary 
+          enabled={hasTheory} 
+          summary={theorySummary} 
+          label="Theory" 
+        />
         
-        {practicalSummary !== undefined && (
-          <>
-            {theorySummary !== undefined && <View style={styles.divider} />}
-            <SummaryComponent summary={practicalSummary} label="Practical" />
-          </>
-        )}
+        <View style={styles.divider} />
+        
+        <ColumnSummary 
+          enabled={hasPractical} 
+          summary={practicalSummary} 
+          label="Practical" 
+        />
       </View>
     </TouchableOpacity>
   );
@@ -108,13 +146,13 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: theme.spacing.l,
+    marginBottom: theme.spacing.m,
   },
   iconBox: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: theme.colors.primaryMuted,
+    backgroundColor: 'rgba(199, 107, 53, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: theme.spacing.m,
@@ -123,17 +161,26 @@ const styles = StyleSheet.create({
     flex: 1,
     color: theme.colors.textPrimary,
     fontSize: theme.typography.sizes.m,
-    fontWeight: theme.typography.weights.medium,
+    fontWeight: theme.typography.weights.semiBold,
+  },
+  chevronBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   componentsWrapper: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    paddingTop: 2,
   },
   divider: {
     width: 1,
     backgroundColor: theme.colors.border,
-    marginHorizontal: theme.spacing.m,
-    alignSelf: 'stretch',
+    height: 60,
+    marginHorizontal: theme.spacing.s,
   },
   summaryContainer: {
     flex: 1,
@@ -141,12 +188,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statsContainer: {
-    marginLeft: theme.spacing.m,
+    marginLeft: 10,
     justifyContent: 'center',
+    flex: 1,
   },
   componentLabel: {
     color: theme.colors.textSecondary,
     fontSize: 12,
+    fontWeight: theme.typography.weights.medium,
     marginBottom: 2,
   },
   fractionRow: {
@@ -155,22 +204,25 @@ const styles = StyleSheet.create({
   },
   fractionAttended: {
     color: theme.colors.primary,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: theme.typography.weights.bold,
+  },
+  fractionMuted: {
+    color: theme.colors.textSecondary,
   },
   fractionTotal: {
     color: theme.colors.textSecondary,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: theme.typography.weights.medium,
   },
   classesText: {
-    color: theme.colors.textSecondary,
+    color: theme.colors.textMuted,
     fontSize: 10,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   statusPill: {
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 6,
     paddingVertical: 2,
     alignSelf: 'flex-start',
@@ -178,5 +230,6 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 9,
     fontWeight: theme.typography.weights.bold,
+    letterSpacing: 0.5,
   }
 });

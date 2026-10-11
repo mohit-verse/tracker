@@ -1,19 +1,21 @@
 export const theme = {
   colors: {
-    background: '#050505', // Deep black
-    surface: 'rgba(255, 255, 255, 0.05)', // Glassy surface
-    surfaceHighlight: 'rgba(255, 255, 255, 0.08)',
-    border: 'rgba(255, 255, 255, 0.12)',
+    background: '#101010', // Deep obsidian dark mode background
+    surface: '#202020', // Surface card background
+    surfaceHighlight: '#282828', // Elevated surface
+    surfaceGlass: 'rgba(32, 32, 32, 0.85)', // Liquid glass surface
+    border: 'rgba(255, 255, 255, 0.08)', // Subtle border
+    borderHighlight: 'rgba(199, 107, 53, 0.3)', // Subtle orange border
     textPrimary: '#FFFFFF',
-    textSecondary: '#A1A1AA', // Zinc 400
-    textMuted: '#52525B', // Zinc 600
-    primary: '#F97316', // Burnt Orange
-    primaryMuted: 'rgba(249, 115, 22, 0.2)', // Orange glass
-    success: '#10B981', // Emerald
-    warning: '#F97316', // Using orange for warnings
-    danger: '#EF4444', // Red
-    present: '#10B981',
-    absent: '#EF4444',
+    textSecondary: '#9E9E9E', // Refined gray
+    textMuted: '#616161', // Charcoal muted text
+    primary: '#C76B35', // Burnt orange primary accent
+    primaryMuted: 'rgba(199, 107, 53, 0.18)', // Orange glass tint
+    success: '#36A866', // Positive/success green
+    warning: '#C76B35', // Primary burnt orange for warnings
+    danger: '#E84C4C', // Risk/negative red
+    present: '#36A866', // Present green
+    absent: '#E84C4C', // Absent red
   },
   spacing: {
     xs: 4,

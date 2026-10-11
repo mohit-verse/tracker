@@ -4,6 +4,8 @@ import { Session } from '@supabase/supabase-js';
 import { getDatabase } from '../db';
 import { AppState, Alert } from 'react-native';
 
+import { isSetupComplete } from '../features/setup/setupDomain';
+
 interface AuthContextType {
   session: Session | null;
   loading: boolean;
@@ -30,15 +32,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [ownerError, setOwnerError] = useState<string | null>(null);
-  const [hasSetup, setHasSetup] = useState(true); // default true to avoid flash
+  const [hasSetup, setHasSetup] = useState(false);
 
-  const checkSetupStatus = async () => {
+  const checkSetupStatus = async (): Promise<void> => {
     try {
       const db = await getDatabase();
-      const semester = await db.getFirstAsync(`SELECT id FROM semesters WHERE is_active = 1`);
-      const timetable = await db.getFirstAsync(`SELECT id FROM timetable_rules LIMIT 1`);
-      setHasSetup(!!semester && !!timetable);
+      
+      // 1. Check explicit completion flag
+      const meta = await db.getFirstAsync<{ value: string }>(
+        `SELECT value FROM local_metadata WHERE key = 'setup_completed'`
+      );
+      if (meta?.value === '1') {
+        setHasSetup(true);
+        return;
+      }
+
+      // 2. Validate required entities
+      const semester = await db.getFirstAsync<any>(
+        `SELECT id, name, start_date FROM semesters WHERE is_active = 1`
+      );
+      const subject = await db.getFirstAsync<any>(
+        `SELECT id FROM subjects LIMIT 1`
+      );
+      const timetable = await db.getFirstAsync<any>(
+        `SELECT id FROM timetable_rules LIMIT 1`
+      );
+
+      const complete = isSetupComplete({
+        metadataSetupCompleted: meta?.value,
+        activeSemester: semester,
+        subjectsCount: subject ? 1 : 0,
+        timetableRulesCount: timetable ? 1 : 0,
+      });
+
+      setHasSetup(complete);
+      if (complete) {
+        await db.runAsync(`INSERT OR REPLACE INTO local_metadata (key, value) VALUES ('setup_completed', '1')`);
+      }
     } catch (e) {
+      console.warn('Error checking setup status:', e);
       setHasSetup(false);
     }
   };

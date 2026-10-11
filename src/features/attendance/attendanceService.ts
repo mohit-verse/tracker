@@ -2,10 +2,11 @@ import { AttendanceRecord, AttendanceSummary, TimetableEntry, BatchType } from '
 
 export const calculateAttendance = (
   records: AttendanceRecord[],
-  targetPercentage: number = 0.75
+  targetPercentage: number = 0.75,
+  baseline?: { attendedWeight: number; conductedWeight: number }
 ): AttendanceSummary => {
-  let attendedWeight = 0;
-  let conductedWeight = 0;
+  let attendedWeight = baseline?.attendedWeight || 0;
+  let conductedWeight = baseline?.conductedWeight || 0;
 
   for (const record of records) {
     if (record.weight < 0) {
@@ -101,8 +102,12 @@ export const isAttendanceTargetAchievable = (
 export const getApplicableSessions = (
   date: Date,
   timetable: TimetableEntry[],
-  userBatch: BatchType
+  userBatch: BatchType,
+  isHoliday: boolean = false
 ): TimetableEntry[] => {
+  if (isHoliday) {
+    return [];
+  }
   const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
   
   return timetable.filter(entry => {

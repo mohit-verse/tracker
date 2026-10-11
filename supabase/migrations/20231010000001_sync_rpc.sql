@@ -23,7 +23,7 @@ BEGIN
         RAISE EXCEPTION 'Not authenticated';
     END IF;
 
-    IF p_table_name NOT IN ('semesters', 'subjects', 'timetable_rules', 'class_sessions', 'attendance_records', 'user_preferences', 'habits', 'habit_entries', 'deleted_records') THEN
+    IF p_table_name NOT IN ('semesters', 'subjects', 'timetable_rules', 'class_sessions', 'attendance_records', 'user_preferences', 'habits', 'habit_entries', 'deleted_records', 'holidays') THEN
         RAISE EXCEPTION 'Invalid table name: %', p_table_name;
     END IF;
 

@@ -64,13 +64,20 @@ export async function migrateLegacyDataIfNeeded(db: SQLiteDatabase) {
       [semesterId, 'Legacy Semester', '2023-01-01', '2030-12-31', now, now]
     );
 
-    // Insert Subjects (using MOCK_SUBJECTS as legacy didn't store subjects in AsyncStorage usually)
+    // Insert only subjects referenced by actual legacy records
+    const referencedSubjectIds = new Set([
+      ...timetable.map(t => t.subjectId),
+      ...attendance.map(a => a.subjectId)
+    ]);
+
     for (const sub of MOCK_SUBJECTS) {
-      await txn.runAsync(
-        `INSERT INTO subjects (id, semester_id, name, has_theory, has_practical, created_at, updated_at) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [sub.id, semesterId, sub.name, sub.hasTheory ? 1 : 0, sub.hasPractical ? 1 : 0, now, now]
-      );
+      if (referencedSubjectIds.has(sub.id)) {
+        await txn.runAsync(
+          `INSERT INTO subjects (id, semester_id, name, has_theory, has_practical, created_at, updated_at) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [sub.id, semesterId, sub.name, sub.hasTheory ? 1 : 0, sub.hasPractical ? 1 : 0, now, now]
+        );
+      }
     }
 
     // Insert Timetable Rules

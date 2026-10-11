@@ -19,3 +19,17 @@ export const isDayEligibleForReminder = (
   
   return dayEntries.length > 0;
 };
+
+/**
+ * Checks if a specific calendar date is eligible for a reminder, considering holidays.
+ */
+export const isDateEligibleForReminder = (
+  date: Date,
+  timetable: TimetableEntry[],
+  userBatch: BatchType,
+  holidays: string[] = []
+): boolean => {
+  const dateStr = date.toISOString().split('T')[0];
+  if (holidays.includes(dateStr)) return false;
+  return isDayEligibleForReminder(date.getDay(), timetable, userBatch);
+};

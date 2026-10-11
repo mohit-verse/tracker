@@ -15,7 +15,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   
   let currentDbVersion = result ? parseInt(result.value, 10) : 0;
   
-  if (currentDbVersion >= 1) {
+  if (currentDbVersion >= 2) {
     return;
   }
 
@@ -230,10 +230,43 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
         await tx.execAsync(`ALTER TABLE sync_outbox ADD COLUMN claimed_by TEXT;`);
       } catch (e) {}
 
-      // Set DB version
+      // Set DB version to 1
       await tx.execAsync(`INSERT OR REPLACE INTO local_metadata (key, value) VALUES ('user_version', '1');`);
     });
-    
+
     currentDbVersion = 1;
+  }
+
+  // Version 2 migrations
+  if (currentDbVersion < 2) {
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      // 12. Holidays table
+      await tx.execAsync(`
+        CREATE TABLE IF NOT EXISTS holidays (
+          id TEXT PRIMARY KEY,
+          semester_id TEXT NOT NULL,
+          date TEXT NOT NULL UNIQUE, -- YYYY-MM-DD
+          name TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          sync_status TEXT NOT NULL DEFAULT 'pending',
+          sync_revision INTEGER NOT NULL DEFAULT 1,
+          FOREIGN KEY (semester_id) REFERENCES semesters(id) ON DELETE CASCADE
+        );
+      `);
+
+      // Safe cleanup of demonstrably application-generated demo records:
+      // Only remove if NO attendance records exist in the entire database
+      const attCount = await tx.getFirstAsync<{ cnt: number }>(`SELECT COUNT(*) as cnt FROM attendance_records`);
+      if (!attCount || attCount.cnt === 0) {
+        await tx.runAsync(`DELETE FROM timetable_rules WHERE id IN ('tt_1', 'tt_2', 'tt_3', 'tt_4', 'tt_5', 'tt_6', 'tt_7')`);
+        await tx.runAsync(`DELETE FROM subjects WHERE id IN ('sub_1', 'sub_2', 'sub_3', 'sub_4', 'sub_5', 'sub_6', 'sub_7', 'sub_8', 'sports', 'library')`);
+        await tx.runAsync(`DELETE FROM semesters WHERE name = 'Legacy Semester' AND NOT EXISTS (SELECT 1 FROM subjects WHERE semester_id = semesters.id)`);
+      }
+
+      await tx.execAsync(`INSERT OR REPLACE INTO local_metadata (key, value) VALUES ('user_version', '2');`);
+    });
+
+    currentDbVersion = 2;
   }
 }

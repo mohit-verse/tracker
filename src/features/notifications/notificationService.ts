@@ -20,7 +20,7 @@ import { isDayEligibleForReminder } from './notificationDomain';
 type NotificationsModule = typeof import('expo-notifications');
 let _notifications: NotificationsModule | null | 'unresolved' = 'unresolved';
 
-const getNotifications = async (): Promise<NotificationsModule | null> => {
+export const getNotifications = async (): Promise<NotificationsModule | null> => {
   if (_notifications !== 'unresolved') return _notifications;
 
   try {

@@ -5,6 +5,9 @@ import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, Text, Platform } from 'react-native';
 import { BackgroundGlow } from '../components/BackgroundGlow';
 import { AuthProvider, useAuth } from '../context/AuthContext';
+import { AttendanceProvider } from '../data/useAttendance';
+
+import { resolveNavigationRoute } from '../features/setup/setupDomain';
 
 function RootLayoutNav() {
   const { session, loading, isConfigured, ownerError, hasSetup } = useAuth();
@@ -14,18 +17,18 @@ function RootLayoutNav() {
   useEffect(() => {
     if (loading) return;
 
-    const seg = segments[0] as string;
-    const inAuthGroup = seg === 'auth';
-    const isSetup = seg === 'setup' || seg === 'add-timetable';
+    const currentSegment = (segments[0] as string) || '';
+    const targetRoute = resolveNavigationRoute({
+      loading,
+      ownerError,
+      session,
+      isConfigured,
+      hasSetup,
+      currentSegment,
+    });
 
-    if (!session && !inAuthGroup && isConfigured) {
-      router.replace('/auth' as any);
-    } else if (ownerError && !inAuthGroup) {
-      router.replace('/auth' as any);
-    } else if ((session || !isConfigured) && !hasSetup && !isSetup) {
-      router.replace('/setup' as any);
-    } else if (session && inAuthGroup && hasSetup) {
-      router.replace('/(tabs)' as any);
+    if (targetRoute) {
+      router.replace(targetRoute as any);
     }
   }, [session, loading, segments, ownerError, hasSetup, isConfigured]);
 
@@ -38,7 +41,7 @@ function RootLayoutNav() {
         const Notifications = await getNotifications();
         if (!Notifications) return; // Silent fallback for Expo Go
 
-        subscription = Notifications.addNotificationResponseReceivedListener(response => {
+        subscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
           const data = response.notification.request.content.data as any;
           if (data?.route) {
             try {
@@ -90,11 +93,13 @@ function RootLayoutNav() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <View style={styles.container}>
-        <StatusBar style="light" />
-        <BackgroundGlow />
-        <RootLayoutNav />
-      </View>
+      <AttendanceProvider>
+        <View style={styles.container}>
+          <StatusBar style="light" />
+          <BackgroundGlow />
+          <RootLayoutNav />
+        </View>
+      </AttendanceProvider>
     </AuthProvider>
   );
 }
