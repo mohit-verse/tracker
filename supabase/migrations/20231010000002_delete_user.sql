@@ -36,6 +36,7 @@ BEGIN
   DELETE FROM public.holidays WHERE user_id = v_user_id;
   DELETE FROM public.attendance_baselines WHERE user_id = v_user_id;
   DELETE FROM public.attendance_records WHERE user_id = v_user_id;
+  DELETE FROM public.week_off_days WHERE user_id = v_user_id;
 
   -- Finally, delete the user from the Supabase auth schema.
   -- This removes their identity and revokes their active sessions.

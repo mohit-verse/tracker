@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Alert, Switch } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Alert, Switch, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -302,6 +302,25 @@ export default function ProfileScreen() {
           )}
         </View>
 
+        {/* About Tracker Card */}
+        <Text style={styles.sectionTitle}>About Tracker</Text>
+        <View style={styles.aboutCard}>
+          <View style={styles.aboutHeader}>
+            <Image
+              source={require('../../../assets/icon.png')}
+              style={styles.aboutLogo}
+              resizeMode="contain"
+            />
+            <View style={styles.aboutMeta}>
+              <Text style={styles.aboutName}>Tracker</Text>
+              <Text style={styles.aboutVersion}>Version 1.0.0 • Local-First Architecture</Text>
+            </View>
+          </View>
+          <Text style={styles.aboutDescription}>
+            College attendance, timetable, and habit tracker with offline-first local storage and Supabase cloud sync.
+          </Text>
+        </View>
+
         {session && (
           <>
             <Text style={styles.sectionTitle}>Danger Zone</Text>
@@ -441,5 +460,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.m,
     paddingVertical: theme.spacing.s,
     backgroundColor: theme.colors.surface,
+  },
+  aboutCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.l,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.l,
+    marginBottom: theme.spacing.xl,
+  },
+  aboutHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: theme.spacing.m,
+  },
+  aboutLogo: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.borderHighlight,
+  },
+  aboutMeta: {
+    marginLeft: theme.spacing.m,
+  },
+  aboutName: {
+    fontSize: theme.typography.sizes.l,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.textPrimary,
+  },
+  aboutVersion: {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.textSecondary,
+    marginTop: 2,
+  },
+  aboutDescription: {
+    fontSize: theme.typography.sizes.s,
+    color: theme.colors.textSecondary,
+    lineHeight: 20,
   },
 });

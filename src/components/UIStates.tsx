@@ -2,6 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme/theme';
+export { AppLoadingScreen } from './AppLoadingScreen';
+export { LazyScreen } from './LazyScreen';
 
 interface UIStateProps {
   title?: string;

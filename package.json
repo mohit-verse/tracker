@@ -1,6 +1,7 @@
 {
-  "name": "temp_app",
+  "name": "tracker",
   "version": "1.0.0",
+  "description": "College attendance, timetable, and habit tracker with offline-first local storage and Supabase cloud sync.",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

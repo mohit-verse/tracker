@@ -5,6 +5,7 @@ import { theme } from '../theme/theme';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, Text, Platform } from 'react-native';
 import { BackgroundGlow } from '../components/BackgroundGlow';
+import { AppLoadingScreen } from '../components/AppLoadingScreen';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { AttendanceProvider } from '../data/useAttendance';
 
@@ -63,11 +64,7 @@ function RootLayoutNav() {
   }, [router]);
 
   if (loading) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <BackgroundGlow />
-      </View>
-    );
+    return <AppLoadingScreen />;
   }
 
   return (
@@ -78,17 +75,19 @@ function RootLayoutNav() {
         contentStyle: { backgroundColor: 'transparent' },
         headerShadowVisible: false,
         headerTransparent: true,
+        animation: 'slide_from_right',
+        animationDuration: 240,
       }}
     >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="auth" options={{ headerShown: false }} />
-      <Stack.Screen name="setup" options={{ headerShown: false }} />
-      <Stack.Screen name="add" options={{ presentation: 'modal', headerShown: false }} />
-      <Stack.Screen name="add-timetable" options={{ presentation: 'modal', headerShown: false }} />
-      <Stack.Screen name="subject/[id]" options={{ headerShown: false }} />
-      <Stack.Screen name="manage-subjects" options={{ headerShown: false }} />
-      <Stack.Screen name="settings" options={{ headerShown: false }} />
-      <Stack.Screen name="habit-analysis" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: 'fade' }} />
+      <Stack.Screen name="auth" options={{ headerShown: false, animation: 'fade' }} />
+      <Stack.Screen name="setup" options={{ headerShown: false, animation: 'fade' }} />
+      <Stack.Screen name="add" options={{ presentation: 'modal', animation: 'slide_from_bottom', headerShown: false }} />
+      <Stack.Screen name="add-timetable" options={{ presentation: 'modal', animation: 'slide_from_bottom', headerShown: false }} />
+      <Stack.Screen name="subject/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+      <Stack.Screen name="manage-subjects" options={{ headerShown: false, animation: 'slide_from_right' }} />
+      <Stack.Screen name="settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
+      <Stack.Screen name="habit-analysis" options={{ headerShown: false, animation: 'slide_from_right' }} />
     </Stack>
   );
 }
