@@ -19,8 +19,10 @@ export default function DashboardScreen() {
     subjects, 
     records,
     holidays,
+    weekOffDays,
     markHoliday,
     removeHoliday,
+    toggleWeekOffDay,
     getSubjectSummary, 
     getOverallSummary, 
     settings, 
@@ -472,8 +474,19 @@ export default function DashboardScreen() {
 
             {/* Subjects Header */}
             <View style={[styles.todaySectionHeader, { marginTop: 24 }]}>
-              <Text style={styles.sectionTitle}>Subjects Overview</Text>
-              <Text style={styles.subjectCount}>{subjects.length} enrolled</Text>
+              <View>
+                <Text style={styles.sectionTitle}>Subjects Overview</Text>
+                <Text style={styles.subjectCount}>{subjects.length} enrolled</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.manageSubjectsBtn}
+                onPress={() => router.push('/manage-subjects' as any)}
+                accessibilityRole="button"
+                accessibilityLabel="Manage Subjects"
+              >
+                <Ionicons name="settings-outline" size={13} color={theme.colors.primary} style={{ marginRight: 4 }} />
+                <Text style={styles.manageSubjectsBtnText}>Manage</Text>
+              </TouchableOpacity>
             </View>
           </View>
         }
@@ -550,6 +563,38 @@ export default function DashboardScreen() {
                   {isTodayHoliday ? 'Resume Classes' : 'Mark Holiday'}
                 </Text>
               </TouchableOpacity>
+            </View>
+
+            {/* Recurring Weekly Offs */}
+            <View style={styles.weekOffContainer}>
+              <Text style={styles.formSectionLabel}>Weekly Recurring Offs</Text>
+              <Text style={styles.weekOffSubtitle}>Classes automatically suspended on selected days</Text>
+              <View style={styles.weekOffDaysRow}>
+                {[
+                  { day: 0, label: 'Sun' },
+                  { day: 1, label: 'Mon' },
+                  { day: 2, label: 'Tue' },
+                  { day: 3, label: 'Wed' },
+                  { day: 4, label: 'Thu' },
+                  { day: 5, label: 'Fri' },
+                  { day: 6, label: 'Sat' },
+                ].map(({ day, label }) => {
+                  const isActive = weekOffDays.includes(day);
+                  return (
+                    <TouchableOpacity
+                      key={day}
+                      style={[styles.weekOffDayChip, isActive && styles.weekOffDayChipActive]}
+                      onPress={() => toggleWeekOffDay(day)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Toggle ${label} as recurring off`}
+                    >
+                      <Text style={[styles.weekOffDayText, isActive && styles.weekOffDayTextActive]}>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
 
             {/* Add Holiday Form */}
@@ -1285,5 +1330,59 @@ const styles = StyleSheet.create({
   },
   modalCloseBtn: {
     padding: 4,
+  },
+  manageSubjectsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(199, 107, 53, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(199, 107, 53, 0.3)',
+  },
+  manageSubjectsBtnText: {
+    color: theme.colors.primary,
+    fontSize: 12,
+    fontWeight: theme.typography.weights.semiBold,
+  },
+  weekOffContainer: {
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  weekOffSubtitle: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    marginBottom: 10,
+  },
+  weekOffDaysRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  weekOffDayChip: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: theme.borderRadius.s,
+    backgroundColor: '#161616',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekOffDayChipActive: {
+    backgroundColor: 'rgba(199, 107, 53, 0.2)',
+    borderColor: theme.colors.primary,
+  },
+  weekOffDayText: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    fontWeight: theme.typography.weights.medium,
+  },
+  weekOffDayTextActive: {
+    color: theme.colors.primary,
+    fontWeight: theme.typography.weights.bold,
   },
 });

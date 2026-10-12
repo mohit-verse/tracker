@@ -98,8 +98,8 @@ export const SubjectAttendanceCard: React.FC<SubjectAttendanceCardProps> = ({
   const displayName = formatSubjectDisplayName({ name });
   const iconName = getSubjectIcon(displayName);
 
-  const isTheoryActive = hasTheory || ((theorySummary?.conductedWeight ?? 0) > 0);
-  const isPracticalActive = hasPractical || ((practicalSummary?.conductedWeight ?? 0) > 0);
+  const isTheoryActive = Boolean(hasTheory) || ((theorySummary?.conductedWeight ?? 0) > 0);
+  const isPracticalActive = Boolean(hasPractical) || ((practicalSummary?.conductedWeight ?? 0) > 0);
   const showTheory = isTheoryActive || !isPracticalActive;
   const showPractical = isPracticalActive;
 
@@ -123,19 +123,25 @@ export const SubjectAttendanceCard: React.FC<SubjectAttendanceCardProps> = ({
       </View>
       
       <View style={styles.componentsWrapper}>
-        <ColumnSummary 
-          enabled={showTheory} 
-          summary={theorySummary} 
-          label="Theory" 
-        />
+        {showTheory && (
+          <ColumnSummary 
+            enabled={true} 
+            summary={theorySummary} 
+            label="Theory" 
+          />
+        )}
         
-        <View style={styles.divider} />
+        {showTheory && showPractical && (
+          <View style={styles.divider} />
+        )}
         
-        <ColumnSummary 
-          enabled={showPractical} 
-          summary={practicalSummary} 
-          label="Practical" 
-        />
+        {showPractical && (
+          <ColumnSummary 
+            enabled={true} 
+            summary={practicalSummary} 
+            label="Practical" 
+          />
+        )}
       </View>
     </TouchableOpacity>
   );

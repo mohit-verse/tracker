@@ -47,6 +47,7 @@ export const theme = {
     l: 12,
     xl: 16,
     round: 9999,
+    full: 9999,
   },
   animation: {
     micro: 150,

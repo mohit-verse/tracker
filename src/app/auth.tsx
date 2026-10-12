@@ -4,7 +4,7 @@ import { theme } from '../theme/theme';
 import { supabase } from '../sync/supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { resetDatabaseConnection } from '../db';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 export default function AuthScreen() {
   const [email, setEmail] = useState('');
@@ -61,9 +61,10 @@ export default function AuthScreen() {
             try {
               if (Platform.OS !== 'web') {
                 await resetDatabaseConnection();
-                await FileSystem.deleteAsync(`${FileSystem.Paths.document.uri}SQLite/tracker.db`, { idempotent: true });
-                await FileSystem.deleteAsync(`${FileSystem.Paths.document.uri}SQLite/tracker.db-wal`, { idempotent: true });
-                await FileSystem.deleteAsync(`${FileSystem.Paths.document.uri}SQLite/tracker.db-shm`, { idempotent: true });
+                const baseDir = FileSystem.documentDirectory || '';
+                await FileSystem.deleteAsync(`${baseDir}SQLite/tracker.db`, { idempotent: true });
+                await FileSystem.deleteAsync(`${baseDir}SQLite/tracker.db-wal`, { idempotent: true });
+                await FileSystem.deleteAsync(`${baseDir}SQLite/tracker.db-shm`, { idempotent: true });
               }
               await logout();
               Alert.alert('Success', 'Local data erased. You may now sign in or restart the app.');

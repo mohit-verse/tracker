@@ -86,6 +86,8 @@ function RootLayoutNav() {
       <Stack.Screen name="add" options={{ presentation: 'modal', headerShown: false }} />
       <Stack.Screen name="add-timetable" options={{ presentation: 'modal', headerShown: false }} />
       <Stack.Screen name="subject/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="manage-subjects" options={{ headerShown: false }} />
+      <Stack.Screen name="settings" options={{ headerShown: false }} />
       <Stack.Screen name="habit-analysis" options={{ headerShown: false }} />
     </Stack>
   );

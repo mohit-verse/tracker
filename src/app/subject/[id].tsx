@@ -69,8 +69,8 @@ export default function SubjectDetailScreen() {
   const theorySummary = subject ? getSubjectSummary(subject.id, 'theory') : null;
   const practicalSummary = subject ? getSubjectSummary(subject.id, 'practical') : null;
 
-  const isTheoryActive = subject ? (subject.hasTheory || (theorySummary?.conductedWeight ?? 0) > 0 || hasTheoryBaseline) : false;
-  const isPracticalActive = subject ? (subject.hasPractical || (practicalSummary?.conductedWeight ?? 0) > 0 || hasPracticalBaseline) : false;
+  const isTheoryActive = subject ? (Boolean(subject.hasTheory) || (theorySummary?.conductedWeight ?? 0) > 0 || hasTheoryBaseline) : false;
+  const isPracticalActive = subject ? (Boolean(subject.hasPractical) || (practicalSummary?.conductedWeight ?? 0) > 0 || hasPracticalBaseline) : false;
 
   const showTheory = isTheoryActive || !isPracticalActive;
   const showPractical = isPracticalActive;
@@ -92,23 +92,34 @@ export default function SubjectDetailScreen() {
     const prAtt = parseInt(practicalAttendedInput.trim(), 10) || 0;
     const prCond = parseInt(practicalConductedInput.trim(), 10) || 0;
 
-    if (thAtt < 0 || thCond < 0 || prAtt < 0 || prCond < 0) {
-      Alert.alert('Invalid Input', 'Attendance counts cannot be negative.');
-      return;
+    if (showTheory) {
+      if (thAtt < 0 || thCond < 0) {
+        Alert.alert('Invalid Input', 'Theory attendance counts cannot be negative.');
+        return;
+      }
+      if (thAtt > thCond) {
+        Alert.alert('Invalid Input', 'Theory attended classes cannot exceed total conducted classes.');
+        return;
+      }
     }
-    if (thAtt > thCond) {
-      Alert.alert('Invalid Input', 'Theory attended classes cannot exceed total conducted classes.');
-      return;
-    }
-    if (prAtt > prCond) {
-      Alert.alert('Invalid Input', 'Practical attended classes cannot exceed total conducted classes.');
-      return;
+
+    if (showPractical) {
+      if (prAtt < 0 || prCond < 0) {
+        Alert.alert('Invalid Input', 'Practical attendance counts cannot be negative.');
+        return;
+      }
+      if (prAtt > prCond) {
+        Alert.alert('Invalid Input', 'Practical attended classes cannot exceed total conducted classes.');
+        return;
+      }
     }
 
     try {
       setSavingBaseline(true);
-      await saveBaseline(subject.id, 'theory', thAtt, thCond);
-      if (prCond > 0 || prAtt > 0 || subject.hasPractical) {
+      if (showTheory) {
+        await saveBaseline(subject.id, 'theory', thAtt, thCond);
+      }
+      if (showPractical) {
         await saveBaseline(subject.id, 'practical', prAtt, prCond);
       }
       setBaselineModalVisible(false);
@@ -452,11 +463,11 @@ export default function SubjectDetailScreen() {
               <Text style={styles.cardTitle}>Attendance History</Text>
             </View>
             <View style={styles.pillGroup}>
-              {(['all', 'theory', 'practical'] as const).map(f => (
+              {(['all', ...(showTheory && showPractical ? ['theory', 'practical'] : showTheory ? ['theory'] : ['practical'])] as const).map(f => (
                 <TouchableOpacity 
                   key={f} 
                   style={[styles.pill, historyFilter === f && styles.pillActive]}
-                  onPress={() => setHistoryFilter(f)}
+                  onPress={() => setHistoryFilter(f as any)}
                 >
                   <Text style={[styles.pillText, historyFilter === f && styles.pillTextActive]}>
                     {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -552,82 +563,86 @@ export default function SubjectDetailScreen() {
             </Text>
 
             {/* Theory Baseline Section */}
-            <View style={styles.modalSection}>
-              <View style={styles.modalSectionHeader}>
-                <Text style={styles.modalSectionTitle}>Theory Classes</Text>
-                {parseInt(theoryConductedInput || '0', 10) > 0 && (
-                  <Text style={styles.modalPreviewPercent}>
-                    {Math.round(((parseInt(theoryAttendedInput || '0', 10)) / (parseInt(theoryConductedInput || '1', 10))) * 100)}%
-                  </Text>
-                )}
+            {showTheory && (
+              <View style={styles.modalSection}>
+                <View style={styles.modalSectionHeader}>
+                  <Text style={styles.modalSectionTitle}>Theory Classes</Text>
+                  {parseInt(theoryConductedInput || '0', 10) > 0 && (
+                    <Text style={styles.modalPreviewPercent}>
+                      {Math.round(((parseInt(theoryAttendedInput || '0', 10)) / (parseInt(theoryConductedInput || '1', 10))) * 100)}%
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.inputRow}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Attended</Text>
+                    <TextInput
+                      style={styles.numInput}
+                      keyboardType="number-pad"
+                      value={theoryAttendedInput}
+                      onChangeText={setTheoryAttendedInput}
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.textMuted}
+                    />
+                  </View>
+                  <View style={styles.inputSeparatorBox}>
+                    <Text style={styles.inputSeparatorText}>/</Text>
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Conducted</Text>
+                    <TextInput
+                      style={styles.numInput}
+                      keyboardType="number-pad"
+                      value={theoryConductedInput}
+                      onChangeText={setTheoryConductedInput}
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.textMuted}
+                    />
+                  </View>
+                </View>
               </View>
-              <View style={styles.inputRow}>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Attended</Text>
-                  <TextInput
-                    style={styles.numInput}
-                    keyboardType="number-pad"
-                    value={theoryAttendedInput}
-                    onChangeText={setTheoryAttendedInput}
-                    placeholder="0"
-                    placeholderTextColor={theme.colors.textMuted}
-                  />
-                </View>
-                <View style={styles.inputSeparatorBox}>
-                  <Text style={styles.inputSeparatorText}>/</Text>
-                </View>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Conducted</Text>
-                  <TextInput
-                    style={styles.numInput}
-                    keyboardType="number-pad"
-                    value={theoryConductedInput}
-                    onChangeText={setTheoryConductedInput}
-                    placeholder="0"
-                    placeholderTextColor={theme.colors.textMuted}
-                  />
-                </View>
-              </View>
-            </View>
+            )}
 
             {/* Practical Baseline Section */}
-            <View style={styles.modalSection}>
-              <View style={styles.modalSectionHeader}>
-                <Text style={styles.modalSectionTitle}>Practical Classes</Text>
-                {parseInt(practicalConductedInput || '0', 10) > 0 && (
-                  <Text style={styles.modalPreviewPercent}>
-                    {Math.round(((parseInt(practicalAttendedInput || '0', 10)) / (parseInt(practicalConductedInput || '1', 10))) * 100)}%
-                  </Text>
-                )}
+            {showPractical && (
+              <View style={styles.modalSection}>
+                <View style={styles.modalSectionHeader}>
+                  <Text style={styles.modalSectionTitle}>Practical Classes</Text>
+                  {parseInt(practicalConductedInput || '0', 10) > 0 && (
+                    <Text style={styles.modalPreviewPercent}>
+                      {Math.round(((parseInt(practicalAttendedInput || '0', 10)) / (parseInt(practicalConductedInput || '1', 10))) * 100)}%
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.inputRow}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Attended</Text>
+                    <TextInput
+                      style={styles.numInput}
+                      keyboardType="number-pad"
+                      value={practicalAttendedInput}
+                      onChangeText={setPracticalAttendedInput}
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.textMuted}
+                    />
+                  </View>
+                  <View style={styles.inputSeparatorBox}>
+                    <Text style={styles.inputSeparatorText}>/</Text>
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Conducted</Text>
+                    <TextInput
+                      style={styles.numInput}
+                      keyboardType="number-pad"
+                      value={practicalConductedInput}
+                      onChangeText={setPracticalConductedInput}
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.textMuted}
+                    />
+                  </View>
+                </View>
               </View>
-              <View style={styles.inputRow}>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Attended</Text>
-                  <TextInput
-                    style={styles.numInput}
-                    keyboardType="number-pad"
-                    value={practicalAttendedInput}
-                    onChangeText={setPracticalAttendedInput}
-                    placeholder="0"
-                    placeholderTextColor={theme.colors.textMuted}
-                  />
-                </View>
-                <View style={styles.inputSeparatorBox}>
-                  <Text style={styles.inputSeparatorText}>/</Text>
-                </View>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Conducted</Text>
-                  <TextInput
-                    style={styles.numInput}
-                    keyboardType="number-pad"
-                    value={practicalConductedInput}
-                    onChangeText={setPracticalConductedInput}
-                    placeholder="0"
-                    placeholderTextColor={theme.colors.textMuted}
-                  />
-                </View>
-              </View>
-            </View>
+            )}
 
             {/* Modal Actions */}
             <View style={styles.modalActions}>

@@ -25,15 +25,15 @@ BEGIN
   -- Alternatively, since we use `owner_id = auth.uid()` in RLS policies without foreign keys to auth.users,
   -- we should explicitly delete from public tables to ensure cleanliness if ON DELETE CASCADE is missing.
   
-  DELETE FROM public.semesters WHERE owner_id = v_user_id;
-  DELETE FROM public.subjects WHERE owner_id = v_user_id;
-  DELETE FROM public.timetable_rules WHERE owner_id = v_user_id;
-  DELETE FROM public.class_sessions WHERE owner_id = v_user_id;
-  DELETE FROM public.user_preferences WHERE owner_id = v_user_id;
-  DELETE FROM public.habits WHERE owner_id = v_user_id;
-  DELETE FROM public.habit_entries WHERE owner_id = v_user_id;
-  DELETE FROM public.deleted_records WHERE owner_id = v_user_id;
-  DELETE FROM public.holidays WHERE owner_id = v_user_id;
+  DELETE FROM public.semesters WHERE user_id = v_user_id;
+  DELETE FROM public.subjects WHERE user_id = v_user_id;
+  DELETE FROM public.timetable_rules WHERE user_id = v_user_id;
+  DELETE FROM public.class_sessions WHERE user_id = v_user_id;
+  DELETE FROM public.user_preferences WHERE user_id = v_user_id;
+  DELETE FROM public.habits WHERE user_id = v_user_id;
+  DELETE FROM public.habit_entries WHERE user_id = v_user_id;
+  DELETE FROM public.deleted_records WHERE user_id = v_user_id;
+  DELETE FROM public.holidays WHERE user_id = v_user_id;
   DELETE FROM public.attendance_baselines WHERE user_id = v_user_id;
   DELETE FROM public.attendance_records WHERE user_id = v_user_id;
 

@@ -618,8 +618,56 @@ export async function saveSubject(subject: Subject): Promise<void> {
 
 export async function deleteSubject(id: string): Promise<void> {
   await withTransaction(async (tx: any) => {
+    // 1. Delete associated attendance_records and class_sessions
+    const sessions: any[] = await tx.getAllAsync(`SELECT id FROM class_sessions WHERE subject_id = ?`, [id]);
+    for (const s of sessions) {
+      await tx.runAsync(`DELETE FROM attendance_records WHERE session_id = ?`, [s.id]);
+      await enqueueOutboxOperation(tx, 'DELETE', 'attendance_records', s.id);
+      await tx.runAsync(`DELETE FROM class_sessions WHERE id = ?`, [s.id]);
+      await enqueueOutboxOperation(tx, 'DELETE', 'class_sessions', s.id);
+    }
+
+    // 2. Delete associated timetable_rules
+    const rules: any[] = await tx.getAllAsync(`SELECT id FROM timetable_rules WHERE subject_id = ?`, [id]);
+    for (const r of rules) {
+      await tx.runAsync(`DELETE FROM timetable_rules WHERE id = ?`, [r.id]);
+      await enqueueOutboxOperation(tx, 'DELETE', 'timetable_rules', r.id);
+    }
+
+    // 3. Delete attendance baselines
+    await tx.runAsync(`DELETE FROM attendance_baselines WHERE subject_id = ?`, [id]);
+
+    // 4. Delete the subject itself
     await tx.runAsync(`DELETE FROM subjects WHERE id = ?`, [id]);
     await enqueueOutboxOperation(tx, 'DELETE', 'subjects', id);
+  });
+}
+
+export async function updateSubject(
+  id: string,
+  updates: { name?: string; hasTheory?: boolean; hasPractical?: boolean }
+): Promise<void> {
+  await withTransaction(async (tx: any) => {
+    const existing: any = await tx.getFirstAsync(`SELECT * FROM subjects WHERE id = ?`, [id]);
+    if (!existing) return;
+    const now = new Date().toISOString();
+    const newName = updates.name !== undefined ? formatSubjectDisplayName({ subjectId: id, name: updates.name }) : existing.name;
+    const newHasTheory = updates.hasTheory !== undefined ? (updates.hasTheory ? 1 : 0) : existing.has_theory;
+    const newHasPractical = updates.hasPractical !== undefined ? (updates.hasPractical ? 1 : 0) : existing.has_practical;
+
+    await tx.runAsync(
+      `UPDATE subjects SET name = ?, has_theory = ?, has_practical = ?, updated_at = ? WHERE id = ?`,
+      [newName, newHasTheory, newHasPractical, now, id]
+    );
+
+    await enqueueOutboxOperation(tx, 'UPDATE', 'subjects', id, {
+      id,
+      semester_id: existing.semester_id,
+      name: newName,
+      has_theory: newHasTheory === 1,
+      has_practical: newHasPractical === 1,
+      updated_at: now
+    });
   });
 }
 
@@ -693,6 +741,52 @@ export async function isDateHoliday(date: string): Promise<boolean> {
   const db = await getDatabase();
   const row = await db.getFirstAsync<any>(`SELECT id FROM holidays WHERE date = ?`, [date]);
   return !!row;
+}
+
+export async function getWeekOffDays(semesterId?: string): Promise<number[]> {
+  const db = await getDatabase();
+  let rows: any[];
+  if (semesterId) {
+    rows = await db.getAllAsync<any>(`SELECT day_of_week FROM week_off_days WHERE semester_id = ? ORDER BY day_of_week ASC`, [semesterId]);
+  } else {
+    const activeSem = await db.getFirstAsync<any>(`SELECT id FROM semesters WHERE is_active = 1`);
+    if (activeSem?.id) {
+      rows = await db.getAllAsync<any>(`SELECT day_of_week FROM week_off_days WHERE semester_id = ? ORDER BY day_of_week ASC`, [activeSem.id]);
+    } else {
+      rows = await db.getAllAsync<any>(`SELECT day_of_week FROM week_off_days ORDER BY day_of_week ASC`);
+    }
+  }
+  return rows.map(r => Number(r.day_of_week));
+}
+
+export async function setWeekOffDays(dayOfWeeks: number[], semesterId?: string): Promise<void> {
+  await withTransaction(async (tx: any) => {
+    let semId = semesterId;
+    if (!semId) {
+      const activeSem = await tx.getFirstAsync(`SELECT id FROM semesters WHERE is_active = 1`);
+      semId = activeSem?.id;
+    }
+    if (!semId) {
+      semId = uuidv4();
+      const now = new Date().toISOString();
+      await tx.runAsync(
+        `INSERT INTO semesters (id, name, start_date, end_date, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+        [semId, 'Semester 1', now, now, now, now]
+      );
+    }
+
+    await tx.runAsync(`DELETE FROM week_off_days WHERE semester_id = ?`, [semId]);
+    const now = new Date().toISOString();
+    for (const d of dayOfWeeks) {
+      const id = uuidv4();
+      await tx.runAsync(
+        `INSERT INTO week_off_days (id, semester_id, day_of_week, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        [id, semId, d, now, now]
+      );
+    }
+  });
 }
 
 // ==========================================

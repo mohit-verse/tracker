@@ -129,6 +129,14 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleAuthAction = () => {
+    if (session) {
+      handleSignOut();
+    } else {
+      router.push('/auth' as any);
+    }
+  };
+
   const handleDeleteAccount = async () => {
     if (!session) {
       return Alert.alert('Error', 'You must be signed in to delete your account.');
@@ -202,7 +210,7 @@ export default function ProfileScreen() {
             <Text style={styles.accountEmail}>{userEmail}</Text>
           </View>
           {isConfigured && (
-            <TouchableOpacity onPress={handleSignOut} style={styles.authButton}>
+            <TouchableOpacity onPress={handleAuthAction} style={styles.authButton}>
               <Text style={styles.authButtonText}>{session ? 'Sign Out' : 'Sign In'}</Text>
             </TouchableOpacity>
           )}
@@ -240,6 +248,12 @@ export default function ProfileScreen() {
 
         <Text style={styles.sectionTitle}>Academic & Habits</Text>
         <View style={styles.card}>
+          {renderActionItem(
+            'book-outline',
+            'Subject Management',
+            'Add, edit, toggle Theory/Practical, or delete subjects',
+            () => router.push('/manage-subjects' as any)
+          )}
           {renderActionItem(
             'school-outline', 
             'Semester Management', 

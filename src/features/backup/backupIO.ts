@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { StorageService } from '../../storage/StorageService';
@@ -24,11 +24,15 @@ import { getSubjects } from '../../db/repositories';
 const SAFETY_SNAPSHOT_KEY = '@tracker_safety_snapshot';
 
 function getBackupDirectory(): string {
-  const legacyDir = (FileSystem as any).documentDirectory || (FileSystem as any).cacheDirectory;
-  if (legacyDir) return legacyDir.endsWith('/') ? legacyDir : `${legacyDir}/`;
-  const modernUri = (FileSystem as any).Paths?.document?.uri || (FileSystem as any).Paths?.cache?.uri || '';
-  if (modernUri) return modernUri.endsWith('/') ? modernUri : `${modernUri}/`;
+  const dir = FileSystem.cacheDirectory || FileSystem.documentDirectory || '';
+  if (dir) return dir.endsWith('/') ? dir : `${dir}/`;
   return '';
+}
+
+function getSafetyDir(): string {
+  const base = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
+  const dir = base.endsWith('/') ? base : `${base}/`;
+  return `${dir}safety_backups/`;
 }
 
 /**
@@ -180,7 +184,7 @@ export const pickBackupFile = async (): Promise<unknown | null> => {
 export const createSafetySnapshot = async (): Promise<void> => {
   const backup = await exportBackup();
   const json = JSON.stringify(backup);
-  const dir = `${FileSystem.Paths.document.uri}safety_backups/`;
+  const dir = getSafetyDir();
   
   const dirInfo = await FileSystem.getInfoAsync(dir);
   if (!dirInfo.exists) {
@@ -206,7 +210,7 @@ export const createSafetySnapshot = async (): Promise<void> => {
  * Used if a restore operation fails partway through.
  */
 export const recoverFromSnapshot = async (): Promise<boolean> => {
-  const dir = `${FileSystem.Paths.document.uri}safety_backups/`;
+  const dir = getSafetyDir();
   const dirInfo = await FileSystem.getInfoAsync(dir);
   if (!dirInfo.exists) return false;
 

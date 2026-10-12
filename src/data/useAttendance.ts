@@ -20,12 +20,15 @@ import {
   getHolidays as dbGetHolidays,
   addHoliday as dbAddHoliday,
   deleteHoliday as dbDeleteHoliday,
+  getWeekOffDays,
+  setWeekOffDays,
   getAttendanceBaselines,
   saveAttendanceBaseline,
   getActiveSemester,
   getSemesters,
   setActiveSemester as dbSetActiveSemester,
-  createSemester as dbCreateSemester
+  createSemester as dbCreateSemester,
+  updateSubject as dbUpdateSubject
 } from '../db/repositories';
 import { getLocalDateString } from '../utils/dateUtils';
 import { formatSubjectDisplayName, isSubjectMatch } from '../utils/subjectUtils';
@@ -48,6 +51,7 @@ export interface AttendanceContextType {
   records: AttendanceRecord[];
   subjects: Subject[];
   holidays: { id: string; date: string; name?: string }[];
+  weekOffDays: number[];
   baselines: any[];
   settings: AppSettings;
   timetable: TimetableEntry[];
@@ -83,7 +87,9 @@ export interface AttendanceContextType {
   markHoliday: (date: string, name?: string) => Promise<void>;
   removeHoliday: (date: string) => Promise<void>;
   isHoliday: (date: string) => boolean;
+  toggleWeekOffDay: (day: number) => Promise<void>;
   saveSubject: (subject: Subject) => Promise<void>;
+  updateSubject: (id: string, updates: { name?: string; hasTheory?: boolean; hasPractical?: boolean }) => Promise<void>;
   deleteSubject: (subjectId: string) => Promise<void>;
   updateSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
   switchSemester: (semesterId: string) => Promise<void>;
@@ -96,6 +102,7 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [holidays, setHolidays] = useState<{ id: string; date: string; name?: string }[]>([]);
+  const [weekOffDays, setWeekOffDaysState] = useState<number[]>([]);
   const [baselines, setBaselines] = useState<any[]>([]);
   const [settings, setSettings] = useState<AppSettings>({ studentBatch: 'Batch I', targetPercentage: 0.75 });
   const [activeSemester, setActiveSemesterState] = useState<{ id: string; name: string; start_date: string; end_date?: string } | null>(null);
@@ -108,10 +115,11 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     try {
       setError(null);
       await getDatabase();
-      const [savedRecords, savedSubjects, savedHolidays, savedBaselines, savedSettings, activeSem, allSems] = await Promise.all([
+      const [savedRecords, savedSubjects, savedHolidays, savedWeekOffs, savedBaselines, savedSettings, activeSem, allSems] = await Promise.all([
         getAttendanceRecords(),
         dbGetSubjects(),
         dbGetHolidays(),
+        getWeekOffDays(),
         getAttendanceBaselines(),
         getSettings(),
         getActiveSemester(),
@@ -121,6 +129,7 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
       setRecords(savedRecords || []);
       setSubjects(savedSubjects || []);
       setHolidays(savedHolidays || []);
+      setWeekOffDaysState(savedWeekOffs || []);
       setBaselines(savedBaselines || []);
       if (savedSettings) {
         setSettings(savedSettings);
@@ -333,8 +342,25 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
   }, [records, baselines, subjects, getSubjectSummary, settings.targetPercentage]);
 
   const isHoliday = useCallback((dateStr: string): boolean => {
-    return holidays.some(h => h.date === dateStr);
-  }, [holidays]);
+    const isSpecificHoliday = holidays.some(h => h.date === dateStr);
+    if (isSpecificHoliday) return true;
+    if (weekOffDays.length > 0) {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        return weekOffDays.includes(d.getDay());
+      }
+    }
+    return false;
+  }, [holidays, weekOffDays]);
+
+  const toggleWeekOffDay = async (day: number) => {
+    const next = weekOffDays.includes(day)
+      ? weekOffDays.filter(d => d !== day)
+      : [...weekOffDays, day].sort((a, b) => a - b);
+    setWeekOffDaysState(next);
+    await setWeekOffDays(next, activeSemester?.id);
+  };
 
   const getTodaySessions = (date: Date) => {
     const dateStr = getLocalDateString(date);
@@ -375,6 +401,13 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     triggerBackgroundSync();
   };
 
+  const updateSubject = async (id: string, updates: { name?: string; hasTheory?: boolean; hasPractical?: boolean }) => {
+    await dbUpdateSubject(id, updates);
+    const updated = await dbGetSubjects();
+    setSubjects(updated);
+    triggerBackgroundSync();
+  };
+
   const deleteSubject = async (subjectId: string) => {
     await dbDeleteSubject(subjectId);
     const updated = await dbGetSubjects();
@@ -404,6 +437,7 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     records,
     subjects,
     holidays,
+    weekOffDays,
     baselines,
     settings,
     timetable,
@@ -424,7 +458,9 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     markHoliday,
     removeHoliday,
     isHoliday,
+    toggleWeekOffDay,
     saveSubject,
+    updateSubject,
     deleteSubject,
     updateSettings,
     switchSemester,
@@ -442,6 +478,7 @@ export const useAttendance = (): AttendanceContextType => {
       records: [],
       subjects: [],
       holidays: [],
+      weekOffDays: [],
       baselines: [],
       settings: { studentBatch: 'Batch I', targetPercentage: 0.75 },
       timetable: [],
@@ -474,7 +511,9 @@ export const useAttendance = (): AttendanceContextType => {
       markHoliday: async () => {},
       removeHoliday: async () => {},
       isHoliday: () => false,
+      toggleWeekOffDay: async () => {},
       saveSubject: async () => {},
+      updateSubject: async () => {},
       deleteSubject: async () => {},
       updateSettings: async () => {},
       switchSemester: async () => {},

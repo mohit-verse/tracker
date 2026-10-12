@@ -92,3 +92,23 @@ export function isSubjectMatch(
 
   return false;
 }
+
+export function getSubjectIcon(name: string): any {
+  const lower = name.toLowerCase();
+  if (lower.includes('programming') || lower.includes('c ') || lower.includes('code')) return 'code-slash';
+  if (lower.includes('python')) return 'logo-python';
+  if (lower.includes('communication')) return 'chatbubble-outline';
+  if (lower.includes('multi') || lower.includes('course')) return 'book-outline';
+  if (lower.includes('data') || lower.includes('analytics')) return 'bar-chart-outline';
+  if (lower.includes('project')) return 'folder-outline';
+  if (lower.includes('web') || lower.includes('internet')) return 'globe-outline';
+  if (lower.includes('math') || lower.includes('calculus')) return 'calculator-outline';
+  if (lower.includes('physic')) return 'speedometer-outline';
+  if (lower.includes('chem')) return 'flask-outline';
+  if (lower.includes('electronic') || lower.includes('circuit')) return 'hardware-chip-outline';
+  if (lower.includes('network')) return 'git-network-outline';
+  if (lower.includes('ai') || lower.includes('intelligence') || lower.includes('machine')) return 'bulb-outline';
+  if (lower.includes('sport') || lower.includes('physical')) return 'football-outline';
+  if (lower.includes('lib') || lower.includes('read')) return 'library-outline';
+  return 'school-outline';
+}

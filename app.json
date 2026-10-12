@@ -50,7 +50,9 @@
       "eas": {
         "projectId": "c5e08525-4a11-414a-a80b-2ffe531469ee"
       },
-      "router": {}
+      "router": {},
+      "supabaseUrl": "https://urejmenobovrcefozziw.supabase.co",
+      "supabaseAnonKey": "sb_publishable_CXo9xg2UxxdYsslpgyUNFA_Dq-tfAHT"
     }
   }
 }

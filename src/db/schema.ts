@@ -316,6 +316,44 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
     currentDbVersion = 3;
   }
 
+  // Version 4 migrations: Recurring weekly off days (week_off_days)
+  if (currentDbVersion < 4) {
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.execAsync(`
+        CREATE TABLE IF NOT EXISTS week_off_days (
+          id TEXT PRIMARY KEY,
+          semester_id TEXT NOT NULL,
+          day_of_week INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          sync_status TEXT NOT NULL DEFAULT 'pending',
+          sync_revision INTEGER NOT NULL DEFAULT 1,
+          UNIQUE(semester_id, day_of_week),
+          FOREIGN KEY (semester_id) REFERENCES semesters(id) ON DELETE CASCADE
+        );
+      `);
+      await tx.execAsync(`INSERT OR REPLACE INTO local_metadata (key, value) VALUES ('user_version', '4');`);
+    });
+
+    currentDbVersion = 4;
+  }
+
+  // Self-healing guard: ensure week_off_days table exists
+  try {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS week_off_days (
+        id TEXT PRIMARY KEY,
+        semester_id TEXT NOT NULL,
+        day_of_week INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        sync_status TEXT NOT NULL DEFAULT 'pending',
+        sync_revision INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(semester_id, day_of_week)
+      );
+    `);
+  } catch (e) {}
+
   // Self-healing guard: unconditionally ensure attendance_baselines has all columns
   try {
     const tableInfo = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(attendance_baselines)`);

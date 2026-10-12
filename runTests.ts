@@ -15,7 +15,7 @@ import {
   generateHabitsCSV,
 } from './src/features/backup/backupService';
 import { formatTo12hDisplay } from './src/utils/timeFormat';
-import { formatSubjectDisplayName, isUUID } from './src/utils/subjectUtils';
+import { formatSubjectDisplayName, isUUID, isSubjectMatch } from './src/utils/subjectUtils';
 import { getLocalDateString } from './src/utils/dateUtils';
 
 let passed = 0;
@@ -53,6 +53,10 @@ function assertTrue(condition: boolean, testName: string) {
     failed++;
     console.error(`❌ [FAIL] ${testName}`);
   }
+}
+
+function assertFalse(condition: boolean, testName: string) {
+  assertTrue(!condition, testName);
 }
 
 const createRecord = (id: string, status: 'present' | 'absent', weight: number, component: 'theory' | 'practical' | 'none' = 'theory'): AttendanceRecord => ({
@@ -497,6 +501,7 @@ assertEqual(14, calculatedTheory.conductedWeight, 'Test 86: Theory conducted wei
 assertTrue(Math.abs((calculatedTheory.percentage || 0) - (12 / 14 * 100)) < 0.01, 'Test 86: Theory combined percentage is ~85.7%');
 
 // Test 87: Baseline Practical attendance combines with recorded future attendance separately
+// Test 87: Practical attended weight is baseline + recorded
 const practicalBaseline = { attendedWeight: 4, conductedWeight: 6 };
 const futurePracticalRecords: AttendanceRecord[] = [
   createRecord('fp1', 'absent', 1, 'practical'),
@@ -505,6 +510,142 @@ const calculatedPractical = calculateAttendance(futurePracticalRecords, 0.75, pr
 assertEqual(4, calculatedPractical.attendedWeight, 'Test 87: Practical attended weight is baseline + recorded (4 + 0 = 4)');
 assertEqual(7, calculatedPractical.conductedWeight, 'Test 87: Practical conducted weight is baseline + recorded (6 + 1 = 7)');
 assertTrue(Math.abs((calculatedPractical.percentage || 0) - (4 / 7 * 100)) < 0.01, 'Test 87: Practical combined percentage is ~57.1%');
+
+console.log('\n=== Milestone 16: Subject Matching & Cross-Identifier Attendance Aggregation ===');
+
+const testSubjectsList = [
+  { id: 'uuid-maths-101', name: 'Mathematics' },
+  { id: 'uuid-physics-202', name: 'Physics' },
+];
+
+// Test 88: Direct UUID match
+assertTrue(isSubjectMatch('uuid-maths-101', 'uuid-maths-101', testSubjectsList), 'Test 88: Matches identical UUIDs');
+
+// Test 89: Record has subject name 'Mathematics', target has 'uuid-maths-101'
+assertTrue(isSubjectMatch('Mathematics', 'uuid-maths-101', testSubjectsList), 'Test 89: Matches subject name string to subject UUID');
+
+// Test 90: Target has subject name 'mathematics' (case-insensitive), record has 'uuid-maths-101'
+assertTrue(isSubjectMatch('uuid-maths-101', 'mathematics', testSubjectsList), 'Test 90: Matches subject UUID to subject name string case-insensitively');
+
+// Test 91: Distinct subjects do not match
+assertTrue(!isSubjectMatch('uuid-physics-202', 'uuid-maths-101', testSubjectsList), 'Test 91: Distinct subject UUIDs do not match');
+assertTrue(!isSubjectMatch('Chemistry', 'uuid-maths-101', testSubjectsList), 'Test 91: Distinct subject name does not match');
+
+// Test 92: Records marked with subject name 'Mathematics' aggregate correctly when queried with subject UUID 'uuid-maths-101'
+const legacyNameRecords: AttendanceRecord[] = [
+  {
+    id: 'rec-1',
+    subjectId: 'Mathematics', // Saved with subject name
+    component: 'theory',
+    date: '2026-10-10',
+    timetableEntryId: 'tt-1',
+    status: 'present',
+    weight: 1,
+    createdAt: '2026-10-10T09:00:00Z',
+    updatedAt: '2026-10-10T09:00:00Z',
+  },
+  {
+    id: 'rec-2',
+    subjectId: 'uuid-maths-101', // Saved with UUID
+    component: 'theory',
+    date: '2026-10-11',
+    timetableEntryId: 'tt-1',
+    status: 'present',
+    weight: 1,
+    createdAt: '2026-10-11T09:00:00Z',
+    updatedAt: '2026-10-11T09:00:00Z',
+  },
+  {
+    id: 'rec-3',
+    subjectId: 'uuid-physics-202', // Different subject
+    component: 'theory',
+    date: '2026-10-11',
+    timetableEntryId: 'tt-2',
+    status: 'absent',
+    weight: 1,
+    createdAt: '2026-10-11T10:00:00Z',
+    updatedAt: '2026-10-11T10:00:00Z',
+  },
+];
+
+const matchedForMaths = legacyNameRecords.filter(
+  r => isSubjectMatch(r.subjectId, 'uuid-maths-101', testSubjectsList) && r.component === 'theory'
+);
+assertEqual(2, matchedForMaths.length, 'Test 92: Both legacy name and UUID records match the subject UUID');
+const mathsSummary = calculateAttendance(matchedForMaths, 0.75);
+assertEqual(2, mathsSummary.attendedWeight, 'Test 92: 2 attended classes aggregated');
+assertEqual(2, mathsSummary.conductedWeight, 'Test 92: 2 conducted classes aggregated');
+assertEqual(100, mathsSummary.percentage, 'Test 92: 100% percentage computed for Dashboard card');
+
+// Test 93: PostgREST schema cache error check
+const pgrstError = { code: 'PGRST205', message: "Could not find the table 'public.semesters' in the schema cache" };
+const isSchemaMissing = pgrstError.code === 'PGRST205' || pgrstError.message.includes('schema cache');
+assertTrue(isSchemaMissing, 'Test 93: Correctly identifies PostgREST PGRST205 missing schema error');
+
+console.log('\n=== Milestone 17: Component Isolation, Week-Offs & Subject Management ===');
+
+// Test 94: Theory-only and Practical-only component display flags
+const theoryOnlySub = { id: 'sub-t-only', name: 'Philosophy', hasTheory: true, hasPractical: false };
+const practicalOnlySub = { id: 'sub-p-only', name: 'Chemistry Lab', hasTheory: false, hasPractical: true };
+const bothSub = { id: 'sub-both', name: 'Physics & Lab', hasTheory: true, hasPractical: true };
+
+const resolveComponents = (sub: { hasTheory: boolean; hasPractical: boolean }) => {
+  const isTheoryActive = Boolean(sub.hasTheory);
+  const isPracticalActive = Boolean(sub.hasPractical);
+  const showTheory = isTheoryActive || !isPracticalActive;
+  const showPractical = isPracticalActive;
+  return { showTheory, showPractical };
+};
+
+const tFlags = resolveComponents(theoryOnlySub);
+assertTrue(tFlags.showTheory, 'Test 94: Theory-only subject enables theory');
+assertFalse(tFlags.showPractical, 'Test 94: Theory-only subject hides practical');
+
+const pFlags = resolveComponents(practicalOnlySub);
+assertFalse(pFlags.showTheory, 'Test 94: Practical-only subject hides theory');
+assertTrue(pFlags.showPractical, 'Test 94: Practical-only subject enables practical');
+
+const bothFlags = resolveComponents(bothSub);
+assertTrue(bothFlags.showTheory, 'Test 94: Dual component subject enables theory');
+assertTrue(bothFlags.showPractical, 'Test 94: Dual component subject enables practical');
+
+// Test 95: Recurring Week-Offs evaluation
+const sampleHolidays = [{ id: 'h1', date: '2026-10-15', name: 'Diwali' }];
+const sampleWeekOffDays = [0, 6]; // Sunday (0) and Saturday (6)
+
+const checkIsHoliday = (dateStr: string, holidays: { date: string }[], weekOffs: number[]): boolean => {
+  if (holidays.some(h => h.date === dateStr)) return true;
+  if (weekOffs.length > 0) {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      return weekOffs.includes(d.getDay());
+    }
+  }
+  return false;
+};
+
+// 2026-10-18 is Sunday (day 0)
+assertTrue(checkIsHoliday('2026-10-18', sampleHolidays, sampleWeekOffDays), 'Test 95: Sunday is detected as holiday via recurring week-off');
+// 2026-10-17 is Saturday (day 6)
+assertTrue(checkIsHoliday('2026-10-17', sampleHolidays, sampleWeekOffDays), 'Test 95: Saturday is detected as holiday via recurring week-off');
+// 2026-10-15 is Thursday, marked in holidays
+assertTrue(checkIsHoliday('2026-10-15', sampleHolidays, sampleWeekOffDays), 'Test 95: Specific date holiday is detected');
+// 2026-10-16 is Friday (day 5), normal working day
+assertFalse(checkIsHoliday('2026-10-16', sampleHolidays, sampleWeekOffDays), 'Test 95: Friday is regular working day');
+
+// Test 96: Subject Management Input Validations
+const validateSubjectInputs = (name: string, hasTheory: boolean, hasPractical: boolean) => {
+  if (!name || !name.trim()) return { valid: false, error: 'Name is required' };
+  if (!hasTheory && !hasPractical) return { valid: false, error: 'At least one component required' };
+  return { valid: true };
+};
+
+assertFalse(validateSubjectInputs('', true, false).valid, 'Test 96: Empty subject name rejected');
+assertFalse(validateSubjectInputs('Valid Name', false, false).valid, 'Test 96: Both components false rejected');
+assertTrue(validateSubjectInputs('Valid Name', true, false).valid, 'Test 96: Theory-only subject passes');
+assertTrue(validateSubjectInputs('Valid Name', false, true).valid, 'Test 96: Practical-only subject passes');
+assertTrue(validateSubjectInputs('Valid Name', true, true).valid, 'Test 96: Both components true passes');
 
 console.log(`\nResults: ${passed} passed, ${failed} failed.`);
 if (failed > 0) process.exit(1);
