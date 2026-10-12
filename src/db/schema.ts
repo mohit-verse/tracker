@@ -74,17 +74,17 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
         );
       `);
 
-      // 4. Week-off days
+      // 4. Week-off days (Recurring weekly offs: 0=Sun..6=Sat)
       await tx.execAsync(`
         CREATE TABLE IF NOT EXISTS week_off_days (
           id TEXT PRIMARY KEY,
           semester_id TEXT NOT NULL,
-          date TEXT NOT NULL, -- YYYY-MM-DD
-          description TEXT,
+          day_of_week INTEGER NOT NULL,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           sync_status TEXT NOT NULL DEFAULT 'pending',
           sync_revision INTEGER NOT NULL DEFAULT 1,
+          UNIQUE(semester_id, day_of_week),
           FOREIGN KEY (semester_id) REFERENCES semesters(id) ON DELETE CASCADE
         );
       `);
@@ -338,21 +338,46 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
     currentDbVersion = 4;
   }
 
-  // Self-healing guard: ensure week_off_days table exists
+  // Self-healing guard: unconditionally ensure week_off_days table exists and has day_of_week
   try {
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS week_off_days (
-        id TEXT PRIMARY KEY,
-        semester_id TEXT NOT NULL,
-        day_of_week INTEGER NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        sync_status TEXT NOT NULL DEFAULT 'pending',
-        sync_revision INTEGER NOT NULL DEFAULT 1,
-        UNIQUE(semester_id, day_of_week)
-      );
-    `);
-  } catch (e) {}
+    const weekOffInfo = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(week_off_days)`);
+    if (weekOffInfo.length > 0) {
+      const hasDayOfWeek = weekOffInfo.some(c => c.name === 'day_of_week');
+      if (!hasDayOfWeek) {
+        // Table exists from v1 without day_of_week column. Recreate with proper schema.
+        await db.execAsync(`
+          DROP TABLE IF EXISTS week_off_days;
+          CREATE TABLE week_off_days (
+            id TEXT PRIMARY KEY,
+            semester_id TEXT NOT NULL,
+            day_of_week INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            sync_status TEXT NOT NULL DEFAULT 'pending',
+            sync_revision INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(semester_id, day_of_week),
+            FOREIGN KEY (semester_id) REFERENCES semesters(id) ON DELETE CASCADE
+          );
+        `);
+      }
+    } else {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS week_off_days (
+          id TEXT PRIMARY KEY,
+          semester_id TEXT NOT NULL,
+          day_of_week INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          sync_status TEXT NOT NULL DEFAULT 'pending',
+          sync_revision INTEGER NOT NULL DEFAULT 1,
+          UNIQUE(semester_id, day_of_week),
+          FOREIGN KEY (semester_id) REFERENCES semesters(id) ON DELETE CASCADE
+        );
+      `);
+    }
+  } catch (e) {
+    console.warn('[Schema] Failed to verify week_off_days schema:', e);
+  }
 
   // Self-healing guard: unconditionally ensure attendance_baselines has all columns
   try {

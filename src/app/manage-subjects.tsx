@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,17 +14,37 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { theme } from '../theme/theme';
 import { BackgroundGlow } from '../components/BackgroundGlow';
 import { useAttendance } from '../data/useAttendance';
 import { Subject } from '../types';
 import { formatSubjectDisplayName, getSubjectIcon } from '../utils/subjectUtils';
+import { getSubjects as dbGetSubjects } from '../db/repositories';
 import { v4 as uuidv4 } from 'uuid';
 
 export default function ManageSubjectsScreen() {
   const insets = useSafeAreaInsets();
-  const { subjects, saveSubject, updateSubject, deleteSubject, getSubjectSummary } = useAttendance();
+  const { subjects: contextSubjects, saveSubject, updateSubject, deleteSubject, getSubjectSummary, loadData } = useAttendance();
+  const [directSubjects, setDirectSubjects] = useState<Subject[]>([]);
+
+  const fetchFreshSubjects = useCallback(async () => {
+    try {
+      if (loadData) await loadData();
+      const direct = await dbGetSubjects();
+      if (direct && direct.length > 0) {
+        setDirectSubjects(direct);
+      }
+    } catch (e) {}
+  }, [loadData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchFreshSubjects();
+    }, [fetchFreshSubjects])
+  );
+
+  const subjects = contextSubjects && contextSubjects.length > 0 ? contextSubjects : directSubjects;
 
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState('');

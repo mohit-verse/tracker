@@ -44,7 +44,8 @@ export default function TimetableScreen() {
     holidays, 
     markHoliday, 
     removeHoliday, 
-    isHoliday 
+    isHoliday,
+    loadData
   } = useAttendance();
   const insets = useSafeAreaInsets();
 
@@ -85,7 +86,8 @@ export default function TimetableScreen() {
   useFocusEffect(
     useCallback(() => {
       loadTimetable();
-    }, [loadTimetable])
+      if (loadData) loadData();
+    }, [loadTimetable, loadData])
   );
 
   if (error) {

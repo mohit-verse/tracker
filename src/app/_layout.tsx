@@ -10,11 +10,20 @@ import { AuthProvider, useAuth } from '../context/AuthContext';
 import { AttendanceProvider } from '../data/useAttendance';
 
 import { resolveNavigationRoute } from '../features/setup/setupDomain';
+import * as SplashScreen from 'expo-splash-screen';
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function RootLayoutNav() {
   const { session, loading, isConfigured, ownerError, hasSetup } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  useEffect(() => {
+    if (!loading) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [loading]);
 
   useEffect(() => {
     if (loading) return;
@@ -32,7 +41,7 @@ function RootLayoutNav() {
     if (targetRoute) {
       router.replace(targetRoute as any);
     }
-  }, [session, loading, segments, ownerError, hasSetup, isConfigured]);
+  }, [session, loading, segments, ownerError, hasSetup, isConfigured, router]);
 
   // Handle Notifications (Dynamic import to avoid Expo Go SDK 53 crash)
   useEffect(() => {
@@ -72,11 +81,11 @@ function RootLayoutNav() {
       screenOptions={{
         headerStyle: { backgroundColor: 'transparent' },
         headerTintColor: theme.colors.textPrimary,
-        contentStyle: { backgroundColor: 'transparent' },
+        contentStyle: { backgroundColor: theme.colors.background },
         headerShadowVisible: false,
         headerTransparent: true,
-        animation: 'slide_from_right',
-        animationDuration: 240,
+        animation: 'fade',
+        animationDuration: 180,
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: 'fade' }} />
@@ -84,10 +93,10 @@ function RootLayoutNav() {
       <Stack.Screen name="setup" options={{ headerShown: false, animation: 'fade' }} />
       <Stack.Screen name="add" options={{ presentation: 'modal', animation: 'slide_from_bottom', headerShown: false }} />
       <Stack.Screen name="add-timetable" options={{ presentation: 'modal', animation: 'slide_from_bottom', headerShown: false }} />
-      <Stack.Screen name="subject/[id]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-      <Stack.Screen name="manage-subjects" options={{ headerShown: false, animation: 'slide_from_right' }} />
-      <Stack.Screen name="settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
-      <Stack.Screen name="habit-analysis" options={{ headerShown: false, animation: 'slide_from_right' }} />
+      <Stack.Screen name="subject/[id]" options={{ headerShown: false, animation: 'fade' }} />
+      <Stack.Screen name="manage-subjects" options={{ headerShown: false, animation: 'fade' }} />
+      <Stack.Screen name="settings" options={{ headerShown: false, animation: 'fade' }} />
+      <Stack.Screen name="habit-analysis" options={{ headerShown: false, animation: 'fade' }} />
     </Stack>
   );
 }

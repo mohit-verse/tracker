@@ -744,19 +744,27 @@ export async function isDateHoliday(date: string): Promise<boolean> {
 }
 
 export async function getWeekOffDays(semesterId?: string): Promise<number[]> {
-  const db = await getDatabase();
-  let rows: any[];
-  if (semesterId) {
-    rows = await db.getAllAsync<any>(`SELECT day_of_week FROM week_off_days WHERE semester_id = ? ORDER BY day_of_week ASC`, [semesterId]);
-  } else {
-    const activeSem = await db.getFirstAsync<any>(`SELECT id FROM semesters WHERE is_active = 1`);
-    if (activeSem?.id) {
-      rows = await db.getAllAsync<any>(`SELECT day_of_week FROM week_off_days WHERE semester_id = ? ORDER BY day_of_week ASC`, [activeSem.id]);
+  try {
+    const db = await getDatabase();
+    let rows: any[];
+    if (semesterId) {
+      rows = await db.getAllAsync<any>(`SELECT day_of_week FROM week_off_days WHERE semester_id = ? ORDER BY day_of_week ASC`, [semesterId]);
     } else {
-      rows = await db.getAllAsync<any>(`SELECT day_of_week FROM week_off_days ORDER BY day_of_week ASC`);
+      const activeSem = await db.getFirstAsync<any>(`SELECT id FROM semesters WHERE is_active = 1`);
+      if (activeSem?.id) {
+        rows = await db.getAllAsync<any>(`SELECT day_of_week FROM week_off_days WHERE semester_id = ? ORDER BY day_of_week ASC`, [activeSem.id]);
+      } else {
+        rows = await db.getAllAsync<any>(`SELECT day_of_week FROM week_off_days ORDER BY day_of_week ASC`);
+      }
     }
+    return rows.map(r => Number(r.day_of_week));
+  } catch (err: any) {
+    if (err?.message?.includes('no such column: day_of_week') || err?.message?.includes('no such table')) {
+      console.warn('[Repositories] week_off_days column not ready yet, falling back to [0, 6]');
+      return [0, 6];
+    }
+    throw err;
   }
-  return rows.map(r => Number(r.day_of_week));
 }
 
 export async function setWeekOffDays(dayOfWeeks: number[], semesterId?: string): Promise<void> {

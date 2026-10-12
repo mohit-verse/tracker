@@ -115,7 +115,7 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
     try {
       setError(null);
       await getDatabase();
-      const [savedRecords, savedSubjects, savedHolidays, savedWeekOffs, savedBaselines, savedSettings, activeSem, allSems] = await Promise.all([
+      const results = await Promise.allSettled([
         getAttendanceRecords(),
         dbGetSubjects(),
         dbGetHolidays(),
@@ -125,6 +125,15 @@ export const AttendanceProvider = ({ children }: { children: ReactNode }) => {
         getActiveSemester(),
         getSemesters(),
       ]);
+
+      const savedRecords = results[0].status === 'fulfilled' ? results[0].value : [];
+      const savedSubjects = results[1].status === 'fulfilled' ? results[1].value : [];
+      const savedHolidays = results[2].status === 'fulfilled' ? results[2].value : [];
+      const savedWeekOffs = results[3].status === 'fulfilled' ? results[3].value : [0, 6];
+      const savedBaselines = results[4].status === 'fulfilled' ? results[4].value : [];
+      const savedSettings = results[5].status === 'fulfilled' ? results[5].value : null;
+      const activeSem = results[6].status === 'fulfilled' ? results[6].value : null;
+      const allSems = results[7].status === 'fulfilled' ? results[7].value : [];
 
       setRecords(savedRecords || []);
       setSubjects(savedSubjects || []);
