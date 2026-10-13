@@ -8,6 +8,7 @@
     "icon": "./assets/icon.png",
     "scheme": "tracker",
     "userInterfaceStyle": "dark",
+    "backgroundColor": "#0F1115",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -16,6 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.mohitverse.tracker",
+      "backgroundColor": "#0F1115",
       "splash": {
         "image": "./assets/splash-icon.png",
         "resizeMode": "contain",
@@ -24,6 +26,7 @@
     },
     "android": {
       "package": "com.mohitverse.tracker",
+      "backgroundColor": "#0F1115",
       "splash": {
         "image": "./assets/splash-icon.png",
         "resizeMode": "contain",
@@ -36,6 +39,14 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
+    },
+    "androidStatusBar": {
+      "backgroundColor": "#0F1115",
+      "barStyle": "light-content"
+    },
+    "androidNavigationBar": {
+      "backgroundColor": "#0F1115",
+      "barStyle": "light-content"
     },
     "web": {
       "favicon": "./assets/favicon.png"
